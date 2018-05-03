@@ -2,16 +2,28 @@
 const WebSocket = require('ws');
 const wss = new WebSocket.Server({ port: 8080, clientTracking: true });
 
+const testFolder = '/home/martin/audio';
+const fs = require('fs');
+
+currentFiles = [];
+
+fs.readdirSync(testFolder).forEach(file => {
+    currentFiles.push(testFolder + "/" + file)
+})
+
+console.log(currentFiles);
+
 //Befehle auf Kommandzeile ausfuehren
 const { execSync } = require('child_process');
 
 //Timer benachrichtigt in regelmaesigen Abstaenden ueber Aenderung z.B. Zeit
 timerID = null;
 
-//Aktuellen Song / Volume / MuteStatus merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
+//Aktuellen Song / Volume / MuteStatus / Song innerhalb der Playlist merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentSong = null;
 currentVolume = 100;
 currentMute = false;
+currentPosition = 0;
 
 //Wenn sich ein WebSocket mit dem WebSocketServer verbindet
 wss.on('connection', function connection(ws) {
@@ -42,9 +54,32 @@ wss.on('connection', function connection(ws) {
         //Pro Typ gewisse Aktionen durchfuehren
         switch (type) {
 
+            //Song wurde vom Nutzer weitergeschaltet
+            case 'change-song':
+
+                console.log("change-song " + value);
+
+                if (value) {
+                    execSync('mocp --next')
+                }
+                else {
+                    execSync('mocp --previous')
+                }
+                break;
+
             //Song hat sich geandert
             case 'song-change':
                 console.log("New Song is " + value);
+
+                //Der wie vielte Titel in der Playlist ist es
+                currentPosition = currentFiles.indexOf(value);
+
+                //Zusaetzliche Nachricht an clients, welche Position der Titel hat
+                messageObjArr.push({
+                    type: "set-positon",
+                    value: currentPosition
+                })
+
 
                 //neue Song merken
                 currentSong = value;
