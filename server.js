@@ -2,13 +2,18 @@
 const WebSocket = require('ws');
 const wss = new WebSocket.Server({ port: 8080, clientTracking: true });
 
-const testFolder = '/home/martin/audio';
+const testFolder = '/media/usb_red/audio/kindermusik/rz/jahresuhr';
 const fs = require('fs');
+var path = require('path');
+
 
 currentFiles = [];
 
 fs.readdirSync(testFolder).forEach(file => {
-    currentFiles.push(testFolder + "/" + file)
+
+    if (path.extname(file).toLowerCase() === ".mp3") {
+        currentFiles.push(testFolder + "/" + file)
+    }
 })
 
 console.log(currentFiles);
@@ -60,10 +65,23 @@ wss.on('connection', function connection(ws) {
                 console.log("change-song " + value);
 
                 if (value) {
-                    execSync('mocp --next')
+
+                    if (currentPosition < (currentFiles.length - 1)) {
+                        execSync('mocp --next');
+                    }
+                    else {
+                        console.log("kein next beim letzten Track");
+                    }
                 }
                 else {
-                    execSync('mocp --previous')
+
+                    if (currentPosition > 0) {
+                        execSync('mocp --previous');
+                    }
+                    else {
+                        console.log("1. Titel von vorne");
+                        execSync('mocp --play');
+                    }
                 }
                 break;
 
@@ -74,12 +92,13 @@ wss.on('connection', function connection(ws) {
                 //Der wie vielte Titel in der Playlist ist es
                 currentPosition = currentFiles.indexOf(value);
 
+                console.log("Position " + currentPosition);
+
                 //Zusaetzliche Nachricht an clients, welche Position der Titel hat
                 messageObjArr.push({
-                    type: "set-positon",
-                    value: currentPosition
-                })
-
+                    type: "set-position",
+                    value: (currentPosition + 1)
+                });
 
                 //neue Song merken
                 currentSong = value;
@@ -97,7 +116,7 @@ wss.on('connection', function connection(ws) {
                 currentVolume = value;
 
                 //Mute (ggf.) entfernen und Lautstaerke setzen
-                let volumeCommand = "sudo amixer sset Master on && sudo amixer sset Master " + value + "% -M";
+                let volumeCommand = "sudo amixer sset PCM on && sudo amixer sset PCM " + value + "% -M";
                 console.log(volumeCommand)
                 execSync(volumeCommand);
 
@@ -118,7 +137,7 @@ wss.on('connection', function connection(ws) {
                 muteState = value ? "off" : "on";
 
                 //Lautstaerke setzen
-                let muteCommand = "sudo amixer sset Master " + muteState;
+                let muteCommand = "sudo amixer sset PCM " + muteState;
                 console.log(muteCommand)
                 execSync(muteCommand);
                 break;
@@ -147,6 +166,12 @@ wss.on('connection', function connection(ws) {
     ws.send(JSON.stringify({
         type: "set-mute",
         value: currentMute
+    }));
+
+    //WS (einmalig beim Verbinden) ueber aktuellen Position informieren
+    ws.send(JSON.stringify({
+        type: "set-position",
+        value: (currentPosition + 1)
     }));
 });
 
