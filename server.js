@@ -2,21 +2,9 @@
 const WebSocket = require('ws');
 const wss = new WebSocket.Server({ port: 8080, clientTracking: true });
 
-const testFolder = '/media/usb_red/audio/kindermusik/rz/jahresuhr';
+//Filesystem und Path Abfragen fuer Playlist
 const fs = require('fs');
 var path = require('path');
-
-
-currentFiles = [];
-
-fs.readdirSync(testFolder).forEach(file => {
-
-    if (path.extname(file).toLowerCase() === ".mp3") {
-        currentFiles.push(testFolder + "/" + file)
-    }
-})
-
-console.log(currentFiles);
 
 //Befehle auf Kommandzeile ausfuehren
 const { execSync } = require('child_process');
@@ -24,11 +12,12 @@ const { execSync } = require('child_process');
 //Timer benachrichtigt in regelmaesigen Abstaenden ueber Aenderung z.B. Zeit
 timerID = null;
 
-//Aktuellen Song / Volume / MuteStatus / Song innerhalb der Playlist merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
+//Aktuellen Song / Volume / MuteStatus / Song innerhalb der Playlist / Playlist merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentSong = null;
 currentVolume = 100;
 currentMute = false;
 currentPosition = 0;
+currentPlaylist = [];
 
 //Wenn sich ein WebSocket mit dem WebSocketServer verbindet
 wss.on('connection', function connection(ws) {
@@ -59,27 +48,68 @@ wss.on('connection', function connection(ws) {
         //Pro Typ gewisse Aktionen durchfuehren
         switch (type) {
 
+            //neue Playlist laden
+            case "set-playlist":
+                console.log("set playlist " + value);
+
+                //alte Playlist zuruecksetzen
+                currentPlaylist = [];
+
+                //Ueber Dateien in gewuenschtem Verzeichnis gehen
+                fs.readdirSync(value).forEach(file => {
+
+                    //mp3 files
+                    if (path.extname(file).toLowerCase() === ".mp3") {
+
+                        //In die Playlist laden
+                        currentPlaylist.push(value + "/" + file)
+                    }
+                });
+
+                //Mocp Playlist leeren, neu befuellen und starten
+                execSync('mocp --clear');
+                execSync('mocp -a ' + value);
+                execSync('mocp --play');
+
+                //Liste des Dateinamen an Clients zurueckliefern (nicht nur den dirname)
+                messageObjArr[0]["value"] = currentPlaylist;
+                break;
+
             //Song wurde vom Nutzer weitergeschaltet
             case 'change-song':
-
                 console.log("change-song " + value);
 
+                //wenn der naechste Song kommen soll
                 if (value) {
 
-                    if (currentPosition < (currentFiles.length - 1)) {
+                    //Wenn wir noch nicht beim letzten Titel sind
+                    if (currentPosition < (currentPlaylist.length - 1)) {
+
+                        //zum naechsten Titel springen
                         execSync('mocp --next');
                     }
+
+                    //wir sind beim letzten Titel
                     else {
                         console.log("kein next beim letzten Track");
                     }
                 }
+
+                //der vorherige Titel soll kommen
                 else {
 
+                    //Wenn wir nicht beim 1. Titel sind
                     if (currentPosition > 0) {
+
+                        //zum vorherigen Titel springen
                         execSync('mocp --previous');
                     }
+
+                    //wir sind beim 1. Titel
                     else {
                         console.log("1. Titel von vorne");
+
+                        //Playlist nochmal von vorne starten
                         execSync('mocp --play');
                     }
                 }
@@ -87,21 +117,17 @@ wss.on('connection', function connection(ws) {
 
             //Song hat sich geandert
             case 'song-change':
-                console.log("New Song is " + value);
 
-                //Der wie vielte Titel in der Playlist ist es
-                currentPosition = currentFiles.indexOf(value);
-
-                console.log("Position " + currentPosition);
+                //neue Song merken und Positoin in Playlist merken
+                currentSong = value;
+                currentPosition = currentPlaylist.indexOf(value);
+                console.log("new song " + value + " has position " + (currentPosition + 1));
 
                 //Zusaetzliche Nachricht an clients, welche Position der Titel hat
                 messageObjArr.push({
                     type: "set-position",
                     value: (currentPosition + 1)
                 });
-
-                //neue Song merken
-                currentSong = value;
                 break;
 
             //Playback wurde beendet
@@ -146,7 +172,10 @@ wss.on('connection', function connection(ws) {
         //Ueber Liste der MessageObjs gehen und an WS senden
         for (ws of wss.clients) {
             for (messageObj of messageObjArr)
-                ws.send(JSON.stringify(messageObj));
+                try {
+                    ws.send(JSON.stringify(messageObj));
+                }
+                catch (e) { }
         }
     });
 
@@ -173,6 +202,12 @@ wss.on('connection', function connection(ws) {
         type: "set-position",
         value: (currentPosition + 1)
     }));
+
+    //WS (einmalig beim Verbinden) ueber aktuelle Playlist informieren
+    ws.send(JSON.stringify({
+        type: "set-playlist",
+        value: (currentPlaylist)
+    }));
 });
 
 //Timer-Funktion benachrichtigt regelmaessig die WS
@@ -181,20 +216,26 @@ function startTimer() {
 
     //TimerID, damit Timer zurueckgesetzt werden kann
     timerID = setInterval(() => {
-        //console.log("Send to " + wss.clients.length + " Clients")
+        //console.log("Send to " + wss.clients.length + " clients")
 
         //Wenn es keine Clients gibt
         if (wss.clients.length == 0) {
-            console.log("No more Clients for Timer")
+            console.log("No more clients for Timer")
 
             //Timer zuruecksetzen
             clearInterval(timerID);
             timerID = null;
         }
 
-        //Aktuelle Zeit in Titel ermitteln
-        let time = execSync('mocp -Q %ct');
-        console.log(time.toString().trim())
+        //Zeitpunkt in Titel
+        let time = "";
+
+        //Versuchen aktuelle Zeit in Titel ermitteln
+        try {
+            time = execSync('mocp -Q %ct');
+            console.log(time.toString().trim())
+        }
+        catch (e) { }
 
         //MessageObj erstellen
         let messageObj = {
@@ -204,7 +245,10 @@ function startTimer() {
 
         //MessageObj an WS senden
         for (ws of wss.clients) {
-            ws.send(JSON.stringify(messageObj));
+            try {
+                ws.send(JSON.stringify(messageObj));
+            }
+            catch { }
         }
     }, 1000)
 }
