@@ -12,12 +12,14 @@ const { execSync } = require('child_process');
 //Timer benachrichtigt in regelmaesigen Abstaenden ueber Aenderung z.B. Zeit
 timerID = null;
 
-//Aktuellen Song / Volume / MuteStatus / Song innerhalb der Playlist / Playlist merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
+//Aktuellen Song / Volume / MuteStatus / Song innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentSong = null;
 currentVolume = 100;
 currentMute = false;
 currentPosition = 0;
 currentPlaylist = [];
+currentPaused = false;
+currentRandom = false;
 
 //Wenn sich ein WebSocket mit dem WebSocketServer verbindet
 wss.on('connection', function connection(ws) {
@@ -113,6 +115,16 @@ wss.on('connection', function connection(ws) {
                         execSync('mocp --play');
                     }
                 }
+
+                //Es ist nicht mehr pausiert
+                currentPaused = false;
+
+                //Zusaetzliche Nachricht an clients, dass nun nicht mehr gemutet ist
+                messageObjArr.push({
+                    type: "set-paused",
+                    value: currentPaused
+                })
+
                 break;
 
             //Song hat sich geandert
@@ -121,12 +133,12 @@ wss.on('connection', function connection(ws) {
                 //neue Song merken und Positoin in Playlist merken
                 currentSong = value;
                 currentPosition = currentPlaylist.indexOf(value);
-                console.log("new song " + value + " has position " + (currentPosition + 1));
+                console.log("new song " + value + " has position " + (currentPosition));
 
                 //Zusaetzliche Nachricht an clients, welche Position der Titel hat
                 messageObjArr.push({
                     type: "set-position",
-                    value: (currentPosition + 1)
+                    value: (currentPosition)
                 });
                 break;
 
@@ -146,11 +158,14 @@ wss.on('connection', function connection(ws) {
                 console.log(volumeCommand)
                 execSync(volumeCommand);
 
+                //Mute entfernen
+                currentMute = false;
+
                 //Zusaetzliche Nachricht an clients, dass nun nicht mehr gemutet ist
                 messageObjArr.push({
                     type: "set-mute",
-                    value: false
-                })
+                    value: currentMute
+                });
                 break;
 
             //Mute-Status setzen
@@ -162,10 +177,32 @@ wss.on('connection', function connection(ws) {
                 //Mute fuer Mixer ermitteln
                 muteState = value ? "off" : "on";
 
-                //Lautstaerke setzen
+                //Mute setzen
                 let muteCommand = "sudo amixer sset PCM " + muteState;
                 console.log(muteCommand)
                 execSync(muteCommand);
+                break;
+
+            //Pause-Status setzen
+            case 'set-paused':
+
+                //neuen Pausedstatus merken 
+                currentPaused = value;
+
+                //Wenn pausiert werden soll
+                if (value) {
+                    execSync("mocp --pause");
+                }
+
+                //es ist pausiert und soll wieder gestartet werden
+                else {
+                    execSync("mocp --unpause");
+                }
+                break;
+
+            //Random setzen
+            case 'set-random':
+
                 break;
         }
 
@@ -200,13 +237,19 @@ wss.on('connection', function connection(ws) {
     //WS (einmalig beim Verbinden) ueber aktuellen Position informieren
     ws.send(JSON.stringify({
         type: "set-position",
-        value: (currentPosition + 1)
+        value: currentPosition
     }));
 
     //WS (einmalig beim Verbinden) ueber aktuelle Playlist informieren
     ws.send(JSON.stringify({
         type: "set-playlist",
-        value: (currentPlaylist)
+        value: currentPlaylist
+    }));
+
+    //WS (einmalig beim Verbinden) ueber aktuellen PausedStatus informieren
+    ws.send(JSON.stringify({
+        type: "set-paused",
+        value: currentPaused
     }));
 });
 
