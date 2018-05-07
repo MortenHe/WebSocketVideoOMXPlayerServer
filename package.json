@@ -3,6 +3,8 @@
   "version": "1.0.0",
   "description": "socket.io server",
   "dependencies": {
+    "fs-extra": "^6.0.0",
+    "shuffle-array": "^1.0.1",
     "ws": "^5.1.1"
   }
 }
