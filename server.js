@@ -14,23 +14,54 @@ var shuffle = require('shuffle-array');
 //Befehle auf Kommandzeile ausfuehren
 const { execSync } = require('child_process');
 
+//Je nach Ausfuerung auf pi oder in virtualbox gibt es unterschiedliche Pfade, Mode wird ueber command line uebergeben: node server.js vb
+const mode = process.argv[2] ? process.argv[2] : "pi";
+
+//Wert fuer Pfad aus config.json auslesen
+const configObj = fs.readJsonSync('./config.json');
+
 //Verzeichnis in dem Symlinks fuer Pseudo-Random Wiedergabe hinterlegt werden
-var randomDir = "/home/martin/mh_prog/random";
+const randomDir = configObj[mode]["randomDir"];
 
 //Timer benachrichtigt in regelmaesigen Abstaenden ueber Aenderung z.B. Zeit
 timerID = null;
+
+//Nachrichten an die Clients
+var messageObjArr = [];
 
 //Aktuellen Song / Volume / MuteStatus / Song innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentSong = null;
 currentVolume = 100;
 currentMute = false;
 currentPosition = 0;
-currentPlaylist = "";
 currentFiles = [];
 currentPaused = false;
 currentRandom = false;
 
-var messageObjArr = [];
+//Infos aus letzter Session auslesen
+try {
+
+    //JSON-Objekt aus Datei holen
+    const lastSessionObj = fs.readJsonSync('./lastSession.json');
+
+    //Playlist-Pfad laden
+    currentPlaylist = lastSessionObj.path;
+}
+
+//wenn lastSession.json noch nicht existiert
+catch (e) {
+
+    //keine Playlist laden
+    currentPlaylist = "";
+}
+
+//Wenn eine Playlist aus der vorherigen Session geladen wurde
+if (currentPlaylist) {
+    console.log("Load playlist from last session " + currentPlaylist);
+
+    //diese Playlist zu Beginn spielen
+    setPlaylist();
+}
 
 //Wenn sich ein WebSocket mit dem WebSocketServer verbindet
 wss.on('connection', function connection(ws) {
@@ -68,6 +99,10 @@ wss.on('connection', function connection(ws) {
                 //Audio-Verzeichnis merken
                 currentPlaylist = value;
 
+                //Playlist in Datei merken fuer Neustart
+                fs.writeJsonSync('./lastSession.json', { path: value });
+
+                //Setlist erstellen und starten
                 setPlaylist();
                 break;
 
@@ -142,7 +177,7 @@ wss.on('connection', function connection(ws) {
 
             //Playback wurde beendet
             case 'stop':
-                console.log("STOPPED")
+                //console.log("STOPPED")
                 break;
 
             //Lautstaerke setzen

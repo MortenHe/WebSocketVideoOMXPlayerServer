@@ -1,0 +1,8 @@
+{
+    "pi": {
+        "randomDir": "/home/pi/mh_prog/random"
+    },
+    "vb": {
+        "randomDir": "/home/martin/mh_prog/random"
+    }
+}
