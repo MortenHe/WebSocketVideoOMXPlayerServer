@@ -21,7 +21,7 @@ const mode = process.argv[2] ? process.argv[2] : "pi";
 const configObj = fs.readJsonSync('./config.json');
 
 //Verzeichnis in dem Symlinks fuer Pseudo-Random Wiedergabe hinterlegt werden
-const randomDir = configObj[mode]["randomDir"];
+const randomDir = configObj["path"][mode]["randomDir"];
 
 //Timer benachrichtigt in regelmaesigen Abstaenden ueber Aenderung z.B. Zeit
 timerID = null;
@@ -91,7 +91,7 @@ wss.on('connection', function connection(ws) {
         //Pro Typ gewisse Aktionen durchfuehren
         switch (type) {
 
-            //neue Playlist laden
+            //neue Playlist laden (ueber Browser-Aufruf)
             case "set-playlist":
                 console.log("set playlist " + value);
 
@@ -99,10 +99,26 @@ wss.on('connection', function connection(ws) {
                 currentPlaylist = value;
 
                 //Playlist in Datei merken fuer Neustart
-                fs.writeJsonSync('./lastSession.json', { path: value });
+                fs.writeJsonSync('./lastSession.json', { path: currentPlaylist });
 
                 //Setlist erstellen und starten
                 setPlaylist();
+                break;
+
+            //neue Setlist laden (per RFID-Karte)
+            case "set-rfid-playlist":
+
+                //Audio-Verzeichnis merken, Wert
+                currentPlaylist = "/media/usb_red/audio/" + configObj["cards"][value];
+
+                //Playlist in Datei merken fuer Neustart
+                fs.writeJsonSync('./lastSession.json', { path: currentPlaylist });
+
+                //Setlist erstellen und starten
+                setPlaylist();
+
+                //Playlist Dir an Clients liefern
+                messageObjArr[0].value = currentPlaylist;
                 break;
 
             //Song wurde vom Nutzer weitergeschaltet

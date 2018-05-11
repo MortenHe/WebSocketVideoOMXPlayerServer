@@ -1,8 +1,14 @@
 {
-    "pi": {
-        "randomDir": "/home/pi/mh_prog/random"
+    "path": {
+        "pi": {
+            "randomDir": "/home/pi/mh_prog/random"
+        },
+        "vb": {
+            "randomDir": "/home/martin/mh_prog/random"
+        }
     },
-    "vb": {
-        "randomDir": "/home/martin/mh_prog/random"
+    "cards": {
+        "278820847058": "hsp/janosch/emil-gruenbaer",
+        "229747144066": "kindermusik/rz/starke-kinder"
     }
 }
