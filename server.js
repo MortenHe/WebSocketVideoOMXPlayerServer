@@ -186,13 +186,36 @@ wss.on('connection', function connection(ws) {
                 //Zusaetzliche Nachricht an clients, welche Position der Titel hat
                 messageObjArr.push({
                     type: "set-position",
-                    value: (currentPosition)
+                    value: currentPosition
                 });
                 break;
 
             //Playback wurde beendet
             case 'stop':
                 //console.log("STOPPED")
+                break;
+
+            //Lautstaerke aendern
+            case 'change-volume':
+                console.log(value);
+
+                //Wenn lauter werden soll, max. 100 setzen
+                if (value) {
+                    currentVolume = Math.min(100, currentVolume + 10);
+                }
+
+                //es soll leiser werden, min. 0 setzen
+                else {
+                    currentVolume = Math.max(0, currentVolume - 10);
+                }
+
+                //Lautstaerke setzen
+                let changeVolumeCommand = "sudo amixer sset PCM " + currentVolume + "% -M";
+                console.log(changeVolumeCommand)
+                execSync(changeVolumeCommand);
+
+                //Geaenderten Wert an Clients schicken
+                messageObjArr[0].value = currentVolume;
                 break;
 
             //Lautstaerke setzen
@@ -202,9 +225,9 @@ wss.on('connection', function connection(ws) {
                 currentVolume = value;
 
                 //Lautstaerke setzen
-                let volumeCommand = "sudo amixer sset PCM " + value + "% -M";
-                console.log(volumeCommand)
-                execSync(volumeCommand);
+                let setVolumeCommand = "sudo amixer sset PCM " + value + "% -M";
+                console.log(setVolumeCommand)
+                execSync(setVolumeCommand);
                 break;
 
             //Pause-Status toggeln
