@@ -29,10 +29,9 @@ timerID = null;
 //Nachrichten an die Clients
 var messageObjArr = [];
 
-//Aktuellen Song / Volume / MuteStatus / Song innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
+//Aktuellen Song / Volume / Song innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentSong = null;
 currentVolume = 100;
-currentMute = false;
 currentPosition = 0;
 currentFiles = [];
 currentPaused = false;
@@ -72,7 +71,7 @@ wss.on('connection', function connection(ws) {
         startTimer();
     }
 
-    //Wenn WebSocket eine Nachricht sendet
+    //Wenn WS eine Nachricht an WSS sendet
     ws.on('message', function incoming(message) {
 
         //Nachricht kommt als String -> in JSON Objekt konvertieren
@@ -155,12 +154,12 @@ wss.on('connection', function connection(ws) {
 
                 //Zusaetzliche Nachricht an clients, dass nun nicht mehr gemutet ist
                 messageObjArr.push({
-                    type: "set-paused",
+                    type: "toggle-paused",
                     value: currentPaused
                 })
                 break;
 
-            //Song hat sich geandert
+            //Song hat sich geandert (Aufruf von mocp)
             case 'song-change':
 
                 //neue Song merken und Position in Playlist merken
@@ -186,44 +185,20 @@ wss.on('connection', function connection(ws) {
                 //neue Lautstaerke merken 
                 currentVolume = value;
 
-                //Mute (ggf.) entfernen und Lautstaerke setzen
-                let volumeCommand = "sudo amixer sset PCM on && sudo amixer sset PCM " + value + "% -M";
+                //Lautstaerke setzen
+                let volumeCommand = "sudo amixer sset PCM " + value + "% -M";
                 console.log(volumeCommand)
                 execSync(volumeCommand);
-
-                //Mute entfernen
-                currentMute = false;
-
-                //Zusaetzliche Nachricht an clients, dass nun nicht mehr gemutet ist
-                messageObjArr.push({
-                    type: "set-mute",
-                    value: currentMute
-                });
                 break;
 
-            //Mute-Status setzen
-            case 'set-mute':
+            //Pause-Status toggeln
+            case 'toggle-paused':
 
-                //neuen Mutestatus merken 
-                currentMute = value;
-
-                //Mute fuer Mixer ermitteln
-                muteState = value ? "off" : "on";
-
-                //Mute setzen
-                let muteCommand = "sudo amixer sset PCM " + muteState;
-                console.log(muteCommand)
-                execSync(muteCommand);
-                break;
-
-            //Pause-Status setzen
-            case 'set-paused':
-
-                //neuen Pausedstatus merken 
-                currentPaused = value;
+                //Pausenstatus toggeln
+                currentPaused = !currentPaused;
 
                 //Wenn pausiert werden soll
-                if (value) {
+                if (currentPaused) {
                     execSync("mocp --pause");
                 }
 
@@ -231,6 +206,9 @@ wss.on('connection', function connection(ws) {
                 else {
                     execSync("mocp --unpause");
                 }
+
+                //Geaenderten Wert an Clients schicken
+                messageObjArr[0].value = currentPaused;
                 break;
 
             //Random toggle
@@ -287,12 +265,6 @@ wss.on('connection', function connection(ws) {
         value: currentVolume
     }));
 
-    //WS (einmalig beim Verbinden) ueber aktuellen Mutezustand informieren
-    ws.send(JSON.stringify({
-        type: "set-mute",
-        value: currentMute
-    }));
-
     //WS (einmalig beim Verbinden) ueber aktuellen Position informieren
     ws.send(JSON.stringify({
         type: "set-position",
@@ -307,7 +279,7 @@ wss.on('connection', function connection(ws) {
 
     //WS (einmalig beim Verbinden) ueber aktuellen PausedStatus informieren
     ws.send(JSON.stringify({
-        type: "set-paused",
+        type: "toggle-paused",
         value: currentPaused
     }));
 
