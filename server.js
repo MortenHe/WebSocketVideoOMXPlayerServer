@@ -1,12 +1,60 @@
+//Mplayer + Wrapper anlegen
+const createPlayer = require('mplayer-wrapper');
+const player = createPlayer();
+
 //WebSocketServer anlegen
 const WebSocket = require('ws');
 const wss = new WebSocket.Server({ port: 8080, clientTracking: true });
 
-//Filesystem und Path Abfragen fuer Playlist
-var path = require('path');
+//Zeit Formattierung laden: [5, 13, 22] => 05:13:22
+const timelite = require('timelite');
 
-//rm -fr
-const fs = require('fs-extra')
+//Aktuelle Infos zu Volume / Position in Song / Position innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
+currentVolume = 100;
+currentPosition = 0;
+currentFiles = [];
+currentPaused = false;
+currentRandom = false;
+
+//Wenn bei Track change der Filename geliefert wird
+player.on('filename', (filename) => {
+
+    //Position in Playlist ermitteln
+    currentPosition = currentFiles.indexOf(currentPlaylist + "/" + filename);
+
+    //Position an Clients senden
+    let messageObj = {
+        type: "set-position",
+        value: currentPosition
+    }
+
+    //Ueber Liste der WS gehen und Nachricht schicken
+    for (ws of wss.clients) {
+        try {
+            ws.send(JSON.stringify(messageObj));
+        }
+        catch (e) { }
+    }
+});
+
+//Wenn Laenge des Tracks bei Track change geliefert wird
+player.on('length', function (val) {
+    console.log("Laenge ist " + val);
+})
+
+//Wenn sich ein Titel aendert (durch Nutzer oder durch den Player)
+player.on('track-change', () => {
+
+    //Neuen Dateinamen liefern
+    player.getProps(['filename']);
+
+    //Laenge des Titels liefern
+    player.getProps(['length']);
+});
+
+//Filesystem und Path Abfragen fuer Playlist
+const path = require('path');
+const fs = require('fs-extra');
 
 //Array Shuffle Funktion
 var shuffle = require('shuffle-array');
@@ -20,22 +68,11 @@ const mode = process.argv[2] ? process.argv[2] : "pi";
 //Wert fuer Pfad aus config.json auslesen
 const configObj = fs.readJsonSync('./config.json');
 
-//Verzeichnis in dem Symlinks fuer Pseudo-Random Wiedergabe hinterlegt werden
-const randomDir = configObj["path"][mode]["randomDir"];
-
-//Timer benachrichtigt in regelmaesigen Abstaenden ueber Aenderung z.B. Zeit
-timerID = null;
+//Verzeichnis in dem die playlist.txt hinterlegt wird
+const progDir = configObj["path"][mode]["progDir"];
 
 //Nachrichten an die Clients
 var messageObjArr = [];
-
-//Aktuellen Song / Volume / Song innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
-currentSong = null;
-currentVolume = 100;
-currentPosition = 0;
-currentFiles = [];
-currentPaused = false;
-currentRandom = false;
 
 //Infos aus letzter Session auslesen
 try {
@@ -62,14 +99,12 @@ if (currentPlaylist) {
     setPlaylist();
 }
 
+//TimeFunktion starten, die aktuelle Laufzeit des Titels liefert
+startTimer();
+
 //Wenn sich ein WebSocket mit dem WebSocketServer verbindet
 wss.on('connection', function connection(ws) {
     console.log("new client connected");
-
-    //Timer starten, falls er nicht laeuft
-    if (!timerID) {
-        startTimer();
-    }
 
     //Wenn WS eine Nachricht an WSS sendet
     ws.on('message', function incoming(message) {
@@ -119,6 +154,8 @@ wss.on('connection', function connection(ws) {
 
                 //Playlist Dir an Clients liefern
                 messageObjArr[0].value = currentPlaylist;
+
+                //TODO clients nicht ueber RFID-Karten-Wert informieren
                 break;
 
             //Song wurde vom Nutzer weitergeschaltet
@@ -132,7 +169,7 @@ wss.on('connection', function connection(ws) {
                     if (currentPosition < (currentFiles.length - 1)) {
 
                         //zum naechsten Titel springen
-                        execSync('mocp --next');
+                        player.next();
                     }
 
                     //wir sind beim letzten Titel
@@ -140,7 +177,7 @@ wss.on('connection', function connection(ws) {
 
                         //Wenn Titel pausiert war, wieder unpausen
                         if (currentPaused) {
-                            execSync('mocp --unpause');
+                            player.playPause();
                         }
                         console.log("kein next beim letzten Track");
                     }
@@ -153,51 +190,59 @@ wss.on('connection', function connection(ws) {
                     if (currentPosition > 0) {
 
                         //zum vorherigen Titel springen
-                        execSync('mocp --previous');
+                        player.previous();
                     }
 
                     //wir sind beim 1. Titel
                     else {
-                        console.log("1. Titel von vorne");
 
                         //Playlist nochmal von vorne starten
-                        execSync('mocp --play');
+                        player.seekPercent(0);
+                        console.log("1. Titel von vorne");
+
+                        //Wenn Titel pausiert war, wieder unpausen
+                        if (currentPaused) {
+                            player.playPause();
+                        }
                     }
                 }
 
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
 
-                //Zusaetzliche Nachricht an clients, dass nun nicht mehr gemutet ist
+                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist
+                messageObjArr.push({
+                    type: "toggle-paused",
+                    value: currentPaused
+                });
+
+                //TODO clients nicht ueber increase:boolean informieren
+                break;
+
+            //Sprung zu einem bestimmten Titel in Playlist
+            case "jump-to":
+
+                //Wie viele Schritte in welche Richtung springen?
+                let jumpTo = value - currentPosition;
+                console.log("jump-to " + jumpTo);
+
+                //zu gewissem Titel springen
+                player.exec("pt_step " + jumpTo);
+
+                //Es ist nicht mehr pausiert
+                currentPaused = false;
+
+                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist
                 messageObjArr.push({
                     type: "toggle-paused",
                     value: currentPaused
                 })
-                break;
 
-            //Song hat sich geandert (Aufruf von mocp)
-            case 'song-change':
-
-                //neue Song merken und Position in Playlist merken
-                currentSong = value;
-                currentPosition = currentFiles.indexOf(value);
-                console.log("new song " + value + " has position " + (currentPosition));
-
-                //Zusaetzliche Nachricht an clients, welche Position der Titel hat
-                messageObjArr.push({
-                    type: "set-position",
-                    value: currentPosition
-                });
-                break;
-
-            //Playback wurde beendet
-            case 'stop':
-                //console.log("STOPPED")
+                //TODO nicht an Clients senden?
                 break;
 
             //Lautstaerke aendern
             case 'change-volume':
-                console.log(value);
 
                 //Wenn lauter werden soll, max. 100 setzen
                 if (value) {
@@ -236,15 +281,8 @@ wss.on('connection', function connection(ws) {
                 //Pausenstatus toggeln
                 currentPaused = !currentPaused;
 
-                //Wenn pausiert werden soll
-                if (currentPaused) {
-                    execSync("mocp --pause");
-                }
-
-                //es ist pausiert und soll wieder gestartet werden
-                else {
-                    execSync("mocp --unpause");
-                }
+                //Pause toggeln
+                player.playPause();
 
                 //Geaenderten Wert an Clients schicken
                 messageObjArr[0].value = currentPaused;
@@ -265,24 +303,18 @@ wss.on('connection', function connection(ws) {
 
             //Innerhalb des Titels spulen
             case "seek":
-                try {
 
-                    //Versuchen aktuelle Sekunden in Titel ermitteln und als Int parsen
-                    let currentSecBuffer = execSync('mocp -Q %cs');
-                    let currentSecInt = parseInt(currentSecBuffer.toString().trim());
+                //+/- 10 Sek
+                let seekTo = value ? 10 : -10;
 
-                    //+/- 10 Sek
-                    let jumpTo = value ? currentSecInt + 10 : currentSecInt - 10;
-
-                    //In Titel springen
-                    execSync("mocp --jump " + jumpTo + "s");
-                } catch (e) { }
+                //seek in item
+                player.seek(seekTo);
 
                 //TODO nicht per MessageObj schicken?
                 break;
         }
 
-        //Ueber Liste der MessageObjs gehen und an WS senden
+        //Ueber Liste der MessageObjs gehen und Nachrichten an WS senden
         for (ws of wss.clients) {
             for (messageObj of messageObjArr)
                 try {
@@ -291,12 +323,6 @@ wss.on('connection', function connection(ws) {
                 catch (e) { }
         }
     });
-
-    //WS (einmalig beim Verbinden) ueber aktuellen Titel informieren
-    ws.send(JSON.stringify({
-        type: "song-change",
-        value: currentSong
-    }));
 
     //WS (einmalig beim Verbinden) ueber aktuelles Volume informieren
     ws.send(JSON.stringify({
@@ -308,12 +334,6 @@ wss.on('connection', function connection(ws) {
     ws.send(JSON.stringify({
         type: "set-position",
         value: currentPosition
-    }));
-
-    //WS (einmalig beim Verbinden) ueber aktuelles Playlist (Audio-dir) informieren
-    ws.send(JSON.stringify({
-        type: "set-playlist",
-        value: currentPlaylist
     }));
 
     //WS (einmalig beim Verbinden) ueber aktuellen PausedStatus informieren
@@ -335,110 +355,77 @@ wss.on('connection', function connection(ws) {
     }));
 });
 
-//Timer-Funktion benachrichtigt regelmaessig die WS
+//Timer-Funktion benachrichtigt regelmaessig die WS ueber aktuelle Position des Tracks
 function startTimer() {
-    console.log("startTimer")
+    console.log("startTimer");
 
-    //TimerID, damit Timer zurueckgesetzt werden kann
-    timerID = setInterval(() => {
-        //console.log("Send to " + wss.clients.length + " clients")
+    //Wenn time_pos property geliefert wirde
+    player.on('time_pos', (totalSecondsFloat) => {
 
-        //Wenn es keine Clients gibt
-        if (wss.clients.length == 0) {
-            console.log("No more clients for Timer")
+        //Float zu int: 13.4323 => 13
+        let totalSeconds = Math.trunc(totalSecondsFloat);
+        console.log('track progress is', totalSeconds);
 
-            //Timer zuruecksetzen
-            clearInterval(timerID);
-            timerID = null;
-        }
+        //Umrechung der Sekunden in [h, m, s] fuer formattierte Darstellung
+        let hours = Math.floor(totalSeconds / 3600);
+        totalSeconds %= 3600;
+        let minutes = Math.floor(totalSeconds / 60);
+        let seconds = totalSeconds % 60;
 
-        //Zeitpunkt in Titel
-        let time = "";
+        //h, m, s-Werte in Array packen
+        let output = [hours, minutes, seconds];
 
-        //Versuchen aktuelle Zeit in Titel ermitteln
-        try {
-            time = execSync('mocp -Q %ct');
-            //console.log(time.toString().trim())
-        }
-        catch (e) { }
+        //[2,44,1] => 02:44:01
+        let outputString = timelite.time.str(output);
 
-        //MessageObj erstellen
+        //Time-MessageObj erstellen
         let messageObj = {
             type: "time",
-            value: time.toString().trim()
+            value: outputString
         };
 
-        //MessageObj an WS senden
+        //Time-MessageObj an WS senden
         for (ws of wss.clients) {
             try {
                 ws.send(JSON.stringify(messageObj));
             }
             catch (e) { }
         }
-    }, 1000)
+    });
+
+    //Jede Sekunde die aktuelle Zeit innerhalb des Tracks liefern
+    setInterval(() => {
+        player.getProps(['time_pos']);
+    }, 1000);
 }
 
+//Playlist erstellen und starten
 function setPlaylist() {
 
     //Liste der files zuruecksetzen
     currentFiles = [];
 
-    //davon ausgehen, dass normale Abspiel-Reihenfolge genutzt wird -> uebergegene Audioordner fuer mocp nutzen
-    let audioDir = currentPlaylist;
-
-    //Wenn random abgespielt wird
-    if (currentRandom) {
-
-        //Randomdir fuer mocp Playlist nehmen
-        audioDir = randomDir;
-
-        //Random Dir loeschen und wieder neu anlegen
-        fs.removeSync(randomDir);
-        fs.mkdirSync(randomDir);
-    }
-
-    //Files aus aktuellem Dir sammeln
-    let tempFileArray = [];
-
     //Ueber Dateien in aktuellem Verzeichnis gehen
     fs.readdirSync(currentPlaylist).forEach(file => {
 
-        //mp3 files in die TempFileArray sammeln
+        //mp3 files sammeln
         if (path.extname(file).toLowerCase() === ".mp3") {
-            tempFileArray.push(currentPlaylist + "/" + file)
+            currentFiles.push(currentPlaylist + "/" + file);
         }
     });
 
     //Bei Random
     if (currentRandom) {
 
-        //TempFileArray shuffeln
-        shuffle(tempFileArray);
-
-        //Ueber geshuffelte TempFiles gehen
-        tempFileArray.forEach(function (filePath, index) {
-
-            //0 auffuellen bei Index < 10
-            let prefix = (index + 1) < 10 ? "0" + (index + 1) : (index + 1);
-
-            //Symlink in randomDir erstellen
-            let symlinkPath = randomDir + "/" + prefix + " - " + path.basename(filePath);
-            fs.symlinkSync(filePath, symlinkPath);
-
-            //File merken (aus random Ordner)
-            currentFiles.push(symlinkPath);
-        });
+        //FileArray shuffeln
+        shuffle(currentFiles);
     }
 
-    //Files unshuffeled aus aktuellem Ordner Ordner
-    else {
-        currentFiles = tempFileArray;
-    }
+    //Playlist-Datei schreiben (1 Zeile pro item)
+    fs.writeFileSync(progDir + "/playlist.txt", currentFiles.join("\n"));
 
-    //Mocp Playlist leeren, neu befuellen und starten
-    execSync('mocp --clear');
-    execSync('mocp -a ' + audioDir);
-    execSync('mocp --play');
+    //Playlist-Datei laden und starten
+    player.exec("loadlist " + progDir + "/playlist.txt");
 
     //Liste des Dateinamen an Clients liefern
     messageObjArr.push({

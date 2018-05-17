@@ -1,10 +1,10 @@
 {
     "path": {
         "pi": {
-            "randomDir": "/home/pi/mh_prog/random"
+            "progDir": "/home/pi/mh_prog"
         },
         "vb": {
-            "randomDir": "/home/martin/mh_prog/random"
+            "progDir": "/home/martin/mh_prog"
         }
     },
     "cards": {
