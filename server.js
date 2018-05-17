@@ -15,6 +15,7 @@ currentPosition = 0;
 currentFiles = [];
 currentPaused = false;
 currentRandom = false;
+currentAllowRandom = false;
 
 //Wenn bei Track change der Filename geliefert wird
 player.on('filename', (filename) => {
@@ -131,13 +132,18 @@ wss.on('connection', function connection(ws) {
                 console.log("set playlist " + value);
 
                 //Audio-Verzeichnis merken
-                currentPlaylist = value;
+                currentPlaylist = value.dir;
+
+                //Merken ob Random erlaubt ist
+                currentAllowRandom = value.allowRandom;
 
                 //Playlist in Datei merken fuer Neustart
                 fs.writeJsonSync('./lastSession.json', { path: currentPlaylist });
 
                 //Setlist erstellen und starten
                 setPlaylist();
+
+                //Info nicht an clients schicken?
                 break;
 
             //neue Setlist laden (per RFID-Karte)
@@ -294,8 +300,12 @@ wss.on('connection', function connection(ws) {
                 //Random-Wert togglen
                 currentRandom = !currentRandom;
 
-                //Playlist mit neuem Random-Wert neu laden
-                setPlaylist();
+                //Wenn random erlaubt ist
+                if (currentAllowRandom) {
+
+                    //Playlist mit neuem Random-Wert neu laden
+                    setPlaylist();
+                }
 
                 //Geanderten Wert an Clients schicken
                 messageObjArr[0].value = currentRandom;
@@ -414,8 +424,8 @@ function setPlaylist() {
         }
     });
 
-    //Bei Random
-    if (currentRandom) {
+    //Bei Random und erlaubtem Random
+    if (currentRandom && currentAllowRandom) {
 
         //FileArray shuffeln
         shuffle(currentFiles);
