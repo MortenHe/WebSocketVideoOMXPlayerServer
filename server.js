@@ -9,6 +9,9 @@ const wss = new WebSocket.Server({ port: 8080, clientTracking: true });
 //Zeit Formattierung laden: [5, 13, 22] => 05:13:22
 const timelite = require('timelite');
 
+//lodash laden (padstart)
+var _ = require('lodash');
+
 //Aktuelle Infos zu Volume / Position in Song / Position innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentVolume = 100;
 currentPosition = 0;
@@ -22,6 +25,9 @@ player.on('filename', (filename) => {
 
     //Position in Playlist ermitteln
     currentPosition = currentFiles.indexOf(currentPlaylist + "/" + filename);
+
+    //Position in Playlist zusammen mit anderen Merkmalen merken fuer den Neustart
+    fs.writeJsonSync('./lastSession.json', { path: currentPlaylist, allowRandom: currentAllowRandom, position: currentPosition });
 
     //Position an Clients senden
     let messageObj = {
@@ -41,12 +47,7 @@ player.on('filename', (filename) => {
 //Wenn Laenge des Tracks bei Track change geliefert wird
 player.on('length', function (val) {
     console.log("Laenge ist " + val);
-})
-
-//Wenn Metadaten des Tracks bei Track change geliefert wird
-player.on('metadata', function (val) {
-    console.log("Metadata ist " + val);
-})
+});
 
 //Wenn sich ein Titel aendert (durch Nutzer oder durch den Player)
 player.on('track-change', () => {
@@ -56,9 +57,6 @@ player.on('track-change', () => {
 
     //Laenge des Titels liefern
     player.getProps(['length']);
-
-    //Metadaten
-    player.getProps(['metadata']);
 });
 
 //Filesystem und Path Abfragen fuer Playlist
@@ -91,6 +89,12 @@ try {
 
     //Playlist-Pfad laden
     currentPlaylist = lastSessionObj.path;
+
+    //Laden, ob Randon erlaubt ist
+    currentAllowRandom = lastSessionObj.allowRandom;
+
+    //letzte Position in Playlist laden
+    currentPosition = lastSessionObj.position;
 }
 
 //wenn lastSession.json noch nicht existiert
@@ -105,7 +109,7 @@ if (currentPlaylist) {
     console.log("Load playlist from last session " + currentPlaylist);
 
     //diese Playlist zu Beginn spielen
-    setPlaylist();
+    setPlaylist(true);
 }
 
 //TimeFunktion starten, die aktuelle Laufzeit des Titels liefert
@@ -145,11 +149,11 @@ wss.on('connection', function connection(ws) {
                 //Merken ob Random erlaubt ist
                 currentAllowRandom = value.allowRandom;
 
-                //Playlist in Datei merken fuer Neustart
-                fs.writeJsonSync('./lastSession.json', { path: currentPlaylist });
+                //Playlist und allowRandom in Datei merken fuer Neustart
+                fs.writeJsonSync('./lastSession.json', { path: currentPlaylist, allowRandom: currentAllowRandom, position: currentPosition });
 
                 //Setlist erstellen und starten
-                setPlaylist();
+                setPlaylist(false);
 
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
@@ -163,19 +167,62 @@ wss.on('connection', function connection(ws) {
                 //Info nicht an clients schicken?
                 break;
 
+            //Videoplaylist erstellen
+            case "set-video-playlist":
+
+                //Videos werden als Symlinks immer im gleichen Verzeichnis abgelegt
+                currentPlaylist = progDir + "/videoSym";
+
+                //Symlink verzeichnis leeren
+                fs.emptyDirSync(currentPlaylist);
+
+                //Ueber Videos gehen ([bebl/bebl-bananendieb.mp4, bibi-tina/bibi-tina-sabrinas-fohlen.mp4)
+                value.forEach((videoObj, index) => {
+
+                    //Wo liegt Datei?
+                    let sourcePath = "/media/usb_red/video/" + videoObj.mode + "/" + videoObj.path;
+
+                    //Symlink in gemeinsamen Verzeichnis
+                    let destPath = progDir + "/videoSym/" + _.padStart(index + 1, 2, "0") + " - " + videoObj.name + ".mp4";
+
+                    //Symlink erstellen, aus dem dann die Playlist generiert wird
+                    fs.ensureSymlinkSync(sourcePath, destPath);
+                });
+
+                //Bei Video derzeit kein Random
+                currentAllowRandom = false;
+
+                //Playlist und allowRandom in Datei merken fuer Neustart
+                fs.writeJsonSync('./lastSession.json', { path: currentPlaylist, allowRandom: currentAllowRandom, position: currentPosition });
+
+                //Setlist erstellen und starten
+                setPlaylist(false);
+
+                //Es ist nicht mehr pausiert
+                currentPaused = false;
+
+                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist
+                messageObjArr.push({
+                    type: "toggle-paused",
+                    value: currentPaused
+                });
+                break;
+
+
             //neue Setlist laden (per RFID-Karte)
             case "set-rfid-playlist":
 
-                //Audio-Verzeichnis merken, Wert
-                currentPlaylist = "/media/usb_red/audio/" + configObj["cards"][value];
+                //Audio-Verzeichnis merken
+                currentPlaylist = "/media/usb_red/audio/" + configObj["cards"][value]["path"];
 
-                //allowRandom mitschicken und merken
+                //allowRandom merken
+                currentAllowRandom = configObj["cards"][value]["allowRandom"];
 
-                //Playlist in Datei merken fuer Neustart
-                fs.writeJsonSync('./lastSession.json', { path: currentPlaylist });
+                //Playlist und allowRandom in Datei merken fuer Neustart
+                fs.writeJsonSync('./lastSession.json', { path: currentPlaylist, allowRandom: currentAllowRandom, position: currentPosition });
 
                 //Setlist erstellen und starten
-                setPlaylist();
+                setPlaylist(false);
 
                 //Playlist Dir an Clients liefern
                 messageObjArr[0].value = currentPlaylist;
@@ -270,7 +317,7 @@ wss.on('connection', function connection(ws) {
                 messageObjArr.push({
                     type: "toggle-paused",
                     value: currentPaused
-                })
+                });
 
                 //TODO nicht an Clients senden?
                 break;
@@ -438,7 +485,7 @@ function startTimer() {
 }
 
 //Playlist erstellen und starten
-function setPlaylist() {
+function setPlaylist(reloadSession) {
 
     //Liste der files zuruecksetzen
     currentFiles = [];
@@ -446,8 +493,9 @@ function setPlaylist() {
     //Ueber Dateien in aktuellem Verzeichnis gehen
     fs.readdirSync(currentPlaylist).forEach(file => {
 
-        //mp3 files sammeln
-        if (path.extname(file).toLowerCase() === ".mp3") {
+        //mp4 (video) und mp3 (audio) files sammeln
+        if ([".mp4", ".mp3"].includes(path.extname(file).toLowerCase())) {
+            console.log("add file " + file);
             currentFiles.push(currentPlaylist + "/" + file);
         }
     });
@@ -470,4 +518,13 @@ function setPlaylist() {
         type: "set-files",
         value: currentFiles
     });
+
+    //Wenn die Daten aus einer alten Session kommen
+    if (reloadSession) {
+
+        //zu gewissem Titel springen, wenn nicht sowieso der erste Titel
+        if (currentPosition > 0) {
+            player.exec("pt_step " + currentPosition);
+        }
+    }
 }

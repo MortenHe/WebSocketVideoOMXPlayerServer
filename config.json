@@ -8,7 +8,13 @@
         }
     },
     "cards": {
-        "278820847058": "hsp/janosch/emil-gruenbaer",
-        "229747144066": "kindermusik/rz/starke-kinder"
+        "278820847058": {
+            "path": "hsp/janosch/emil-gruenbaer",
+            "allowRandom": false
+        },
+        "229747144066": {
+            "path": "kindermusik/rz/starke-kinder",
+            "allowRandom": true
+        }
     }
 }
