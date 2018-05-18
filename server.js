@@ -59,6 +59,35 @@ player.on('track-change', () => {
     player.getProps(['length']);
 });
 
+/*	if (line === "ANS_ERROR=PROPERTY_UNAVAILABLE") {
+    return out.emit('playlist-finished')
+}*/
+
+//Wenn Playlist fertig ist
+player.on('playlist-finished', () => {
+    console.log("playlist finished")
+
+    //Clients informieren, dass Playlist fertig ist (position -1, activeItem "")
+    let messageObjArr = [{
+        type: "set-position",
+        value: -1
+    },
+    {
+        type: "active-item",
+        value: ""
+    }];
+
+    //Ueber Liste der WS gehen und Nachricht schicken
+    for (ws of wss.clients) {
+        messageObjArr.forEach(messageObj => {
+            try {
+                ws.send(JSON.stringify(messageObj));
+            }
+            catch (e) { }
+        });
+    }
+});
+
 //Filesystem und Path Abfragen fuer Playlist
 const path = require('path');
 const fs = require('fs-extra');
@@ -139,9 +168,20 @@ wss.on('connection', function connection(ws) {
         //Pro Typ gewisse Aktionen durchfuehren
         switch (type) {
 
+            //System herunterfahren
+            case "shutdown":
+                console.log("shutdown");
+
+                //TV ausschalten
+                execSync("echo 'standby 0' | cec-client -s -d 1");
+
+                //Pi herunterfahren
+                execSync("shutdown -h now");
+                break;
+
             //neue Playlist laden (ueber Browser-Aufruf)
             case "set-playlist":
-                console.log("set playlist " + value);
+                console.log("set playlist " + JSON.stringify(value));
 
                 //Audio-Verzeichnis merken
                 currentPlaylist = value.dir;
@@ -162,6 +202,12 @@ wss.on('connection', function connection(ws) {
                 messageObjArr.push({
                     type: "toggle-paused",
                     value: currentPaused
+                });
+
+                //Zusaetzliche Nachricht an clients, welches das activeItem ist
+                messageObjArr.push({
+                    type: "active-item",
+                    value: value.activeItem
                 });
 
                 //Info nicht an clients schicken?
@@ -206,6 +252,16 @@ wss.on('connection', function connection(ws) {
                     type: "toggle-paused",
                     value: currentPaused
                 });
+
+                //Wenn Playlist nur aus 1 item besteht
+                if (value.length === 1) {
+
+                    //Zusaetzliche Nachricht an clients, welches das activeItem ist
+                    messageObjArr.push({
+                        type: "active-item",
+                        value: value[0].activeItem
+                    });
+                }
                 break;
 
 
@@ -307,8 +363,19 @@ wss.on('connection', function connection(ws) {
                 let jumpTo = value - currentPosition;
                 console.log("jump-to " + jumpTo);
 
-                //zu gewissem Titel springen
-                player.exec("pt_step " + jumpTo);
+                //wenn nicht auf den bereits laufenden geklickt wurde
+                if (jumpTo !== 0) {
+
+                    //zu gewissem Titel springen
+                    player.exec("pt_step " + jumpTo);
+                }
+
+                //es wurde auf den bereits laufenden Titel geklickt
+                else {
+
+                    //diesen wieder von vorne abspielen
+                    player.seekPercent(0);
+                }
 
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
@@ -487,44 +554,53 @@ function startTimer() {
 //Playlist erstellen und starten
 function setPlaylist(reloadSession) {
 
-    //Liste der files zuruecksetzen
-    currentFiles = [];
+    //Sicherstellen, dass Verzeichnis existiert, aus dem die Dateien geladen werden sollen
+    if (fs.existsSync(currentPlaylist)) {
 
-    //Ueber Dateien in aktuellem Verzeichnis gehen
-    fs.readdirSync(currentPlaylist).forEach(file => {
+        //Liste der files zuruecksetzen
+        currentFiles = [];
 
-        //mp4 (video) und mp3 (audio) files sammeln
-        if ([".mp4", ".mp3"].includes(path.extname(file).toLowerCase())) {
-            console.log("add file " + file);
-            currentFiles.push(currentPlaylist + "/" + file);
+        //Ueber Dateien in aktuellem Verzeichnis gehen
+        fs.readdirSync(currentPlaylist).forEach(file => {
+
+            //mp4 (video) und mp3 (audio) files sammeln
+            if ([".mp4", ".mp3"].includes(path.extname(file).toLowerCase())) {
+                console.log("add file " + file);
+                currentFiles.push(currentPlaylist + "/" + file);
+            }
+        });
+
+        //Bei Random und erlaubtem Random
+        if (currentRandom && currentAllowRandom) {
+
+            //FileArray shuffeln
+            shuffle(currentFiles);
         }
-    });
 
-    //Bei Random und erlaubtem Random
-    if (currentRandom && currentAllowRandom) {
+        //Playlist-Datei schreiben (1 Zeile pro item)
+        fs.writeFileSync(progDir + "/playlist.txt", currentFiles.join("\n"));
 
-        //FileArray shuffeln
-        shuffle(currentFiles);
+        //Playlist-Datei laden und starten
+        player.exec("loadlist " + progDir + "/playlist.txt");
+
+        //Liste des Dateinamen an Clients liefern
+        messageObjArr.push({
+            type: "set-files",
+            value: currentFiles
+        });
+
+        //Wenn die Daten aus einer alten Session kommen
+        if (reloadSession) {
+
+            //zu gewissem Titel springen, wenn nicht sowieso der erste Titel
+            if (currentPosition > 0) {
+                player.exec("pt_step " + currentPosition);
+            }
+        }
     }
 
-    //Playlist-Datei schreiben (1 Zeile pro item)
-    fs.writeFileSync(progDir + "/playlist.txt", currentFiles.join("\n"));
-
-    //Playlist-Datei laden und starten
-    player.exec("loadlist " + progDir + "/playlist.txt");
-
-    //Liste des Dateinamen an Clients liefern
-    messageObjArr.push({
-        type: "set-files",
-        value: currentFiles
-    });
-
-    //Wenn die Daten aus einer alten Session kommen
-    if (reloadSession) {
-
-        //zu gewissem Titel springen, wenn nicht sowieso der erste Titel
-        if (currentPosition > 0) {
-            player.exec("pt_step " + currentPosition);
-        }
+    //Verzeichnis existiert nicht
+    else {
+        console.log("dir doesn't exist");
     }
 }
