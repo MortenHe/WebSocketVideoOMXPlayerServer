@@ -43,6 +43,11 @@ player.on('length', function (val) {
     console.log("Laenge ist " + val);
 })
 
+//Wenn Metadaten des Tracks bei Track change geliefert wird
+player.on('metadata', function (val) {
+    console.log("Metadata ist " + val);
+})
+
 //Wenn sich ein Titel aendert (durch Nutzer oder durch den Player)
 player.on('track-change', () => {
 
@@ -51,6 +56,9 @@ player.on('track-change', () => {
 
     //Laenge des Titels liefern
     player.getProps(['length']);
+
+    //Metadaten
+    player.getProps(['metadata']);
 });
 
 //Filesystem und Path Abfragen fuer Playlist
@@ -143,6 +151,15 @@ wss.on('connection', function connection(ws) {
                 //Setlist erstellen und starten
                 setPlaylist();
 
+                //Es ist nicht mehr pausiert
+                currentPaused = false;
+
+                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist
+                messageObjArr.push({
+                    type: "toggle-paused",
+                    value: currentPaused
+                });
+
                 //Info nicht an clients schicken?
                 break;
 
@@ -151,6 +168,8 @@ wss.on('connection', function connection(ws) {
 
                 //Audio-Verzeichnis merken, Wert
                 currentPlaylist = "/media/usb_red/audio/" + configObj["cards"][value];
+
+                //allowRandom mitschicken und merken
 
                 //Playlist in Datei merken fuer Neustart
                 fs.writeJsonSync('./lastSession.json', { path: currentPlaylist });
@@ -161,7 +180,16 @@ wss.on('connection', function connection(ws) {
                 //Playlist Dir an Clients liefern
                 messageObjArr[0].value = currentPlaylist;
 
-                //TODO clients nicht ueber RFID-Karten-Wert informieren
+                //Es ist nicht mehr pausiert
+                currentPaused = false;
+
+                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist
+                messageObjArr.push({
+                    type: "toggle-paused",
+                    value: currentPaused
+                });
+
+                //TODO clients nicht ueber Wert informieren
                 break;
 
             //Song wurde vom Nutzer weitergeschaltet
