@@ -2,7 +2,7 @@
 const createPlayer = require('mplayer-wrapper');
 const player = createPlayer();
 
-//WebSocketServer anlegen
+//WebSocketServer anlegen und starten
 const WebSocket = require('ws');
 const wss = new WebSocket.Server({ port: 8080, clientTracking: true });
 
@@ -12,13 +12,37 @@ const timelite = require('timelite');
 //lodash laden (padstart)
 var _ = require('lodash');
 
+//Filesystem und Path Abfragen fuer Playlist
+const path = require('path');
+const fs = require('fs-extra');
+
+//Array Shuffle Funktion
+var shuffle = require('shuffle-array');
+
+//Befehle auf Kommandzeile ausfuehren
+const { execSync } = require('child_process');
+
+//Je nach Ausfuerung auf pi oder in virtualbox gibt es unterschiedliche Pfade, Mode wird ueber command line uebergeben: node server.js vb
+const mode = process.argv[2] ? process.argv[2] : "pi";
+
+//Wert fuer Pfad aus config.json auslesen
+const configObj = fs.readJsonSync('./config.json');
+
+//Verzeichnis in dem die playlist.txt hinterlegt wird
+const progDir = configObj["path"][mode]["progDir"];
+
 //Aktuelle Infos zu Volume / Position in Song / Position innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
-currentVolume = 100;
+currentVolume = 50;
 currentPosition = 0;
 currentFiles = [];
 currentPaused = false;
 currentRandom = false;
 currentAllowRandom = false;
+
+//Lautstaerke zu Beginn setzen
+let initialVolumeCommand = "sudo amixer sset PCM " + currentVolume + "% -M";
+console.log(initialVolumeCommand)
+execSync(initialVolumeCommand);
 
 //Wenn bei Track change der Filename geliefert wird
 player.on('filename', (filename) => {
@@ -26,22 +50,17 @@ player.on('filename', (filename) => {
     //Position in Playlist ermitteln
     currentPosition = currentFiles.indexOf(currentPlaylist + "/" + filename);
 
-    //Position in Playlist zusammen mit anderen Merkmalen merken fuer den Neustart
-    fs.writeJsonSync('./lastSession.json', { path: currentPlaylist, allowRandom: currentAllowRandom, position: currentPosition });
+    //neue Position in Session-JSON-File schreiben
+    writeSessionJson();
 
     //Position an Clients senden
-    let messageObj = {
+    let messageObjArr = [{
         type: "set-position",
         value: currentPosition
-    }
+    }];
 
-    //Ueber Liste der WS gehen und Nachricht schicken
-    for (ws of wss.clients) {
-        try {
-            ws.send(JSON.stringify(messageObj));
-        }
-        catch (e) { }
-    }
+    //Position-Infos an Clients schicken
+    sendClientInfo(messageObjArr);
 });
 
 //Wenn Laenge des Tracks bei Track change geliefert wird
@@ -77,38 +96,9 @@ player.on('playlist-finished', () => {
         value: ""
     }];
 
-    //Ueber Liste der WS gehen und Nachricht schicken
-    for (ws of wss.clients) {
-        messageObjArr.forEach(messageObj => {
-            try {
-                ws.send(JSON.stringify(messageObj));
-            }
-            catch (e) { }
-        });
-    }
+    //Infos an Clients schicken
+    sendClientInfo(messageObjArr);
 });
-
-//Filesystem und Path Abfragen fuer Playlist
-const path = require('path');
-const fs = require('fs-extra');
-
-//Array Shuffle Funktion
-var shuffle = require('shuffle-array');
-
-//Befehle auf Kommandzeile ausfuehren
-const { execSync } = require('child_process');
-
-//Je nach Ausfuerung auf pi oder in virtualbox gibt es unterschiedliche Pfade, Mode wird ueber command line uebergeben: node server.js vb
-const mode = process.argv[2] ? process.argv[2] : "pi";
-
-//Wert fuer Pfad aus config.json auslesen
-const configObj = fs.readJsonSync('./config.json');
-
-//Verzeichnis in dem die playlist.txt hinterlegt wird
-const progDir = configObj["path"][mode]["progDir"];
-
-//Nachrichten an die Clients
-var messageObjArr = [];
 
 //Infos aus letzter Session auslesen
 try {
@@ -160,10 +150,7 @@ wss.on('connection', function connection(ws) {
         let value = obj.value;
 
         //Array von MessageObjekte erstellen, die an WS gesendet werden
-        messageObjArr = [{
-            type: type,
-            value: value
-        }];
+        let messageObjArr = [];
 
         //Pro Typ gewisse Aktionen durchfuehren
         switch (type) {
@@ -189,8 +176,8 @@ wss.on('connection', function connection(ws) {
                 //Merken ob Random erlaubt ist
                 currentAllowRandom = value.allowRandom;
 
-                //Playlist und allowRandom in Datei merken fuer Neustart
-                fs.writeJsonSync('./lastSession.json', { path: currentPlaylist, allowRandom: currentAllowRandom, position: currentPosition });
+                //neue Playlist und allowRandom in Session-JSON-File schreiben
+                writeSessionJson();
 
                 //Setlist erstellen und starten
                 setPlaylist(false);
@@ -198,72 +185,21 @@ wss.on('connection', function connection(ws) {
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
 
-                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist
-                messageObjArr.push({
-                    type: "toggle-paused",
-                    value: currentPaused
-                });
-
-                //Zusaetzliche Nachricht an clients, welches das activeItem ist
-                messageObjArr.push({
-                    type: "active-item",
-                    value: value.activeItem
-                });
-
-                //Info nicht an clients schicken?
-                break;
-
-            //Videoplaylist erstellen
-            case "set-video-playlist":
-
-                //Videos werden als Symlinks immer im gleichen Verzeichnis abgelegt
-                currentPlaylist = progDir + "/videoSym";
-
-                //Symlink verzeichnis leeren
-                fs.emptyDirSync(currentPlaylist);
-
-                //Ueber Videos gehen ([bebl/bebl-bananendieb.mp4, bibi-tina/bibi-tina-sabrinas-fohlen.mp4)
-                value.forEach((videoObj, index) => {
-
-                    //Wo liegt Datei?
-                    let sourcePath = "/media/usb_red/video/" + videoObj.mode + "/" + videoObj.path;
-
-                    //Symlink in gemeinsamen Verzeichnis
-                    let destPath = progDir + "/videoSym/" + _.padStart(index + 1, 2, "0") + " - " + videoObj.name + ".mp4";
-
-                    //Symlink erstellen, aus dem dann die Playlist generiert wird
-                    fs.ensureSymlinkSync(sourcePath, destPath);
-                });
-
-                //Bei Video derzeit kein Random
-                currentAllowRandom = false;
-
-                //Playlist und allowRandom in Datei merken fuer Neustart
-                fs.writeJsonSync('./lastSession.json', { path: currentPlaylist, allowRandom: currentAllowRandom, position: currentPosition });
-
-                //Setlist erstellen und starten
-                setPlaylist(false);
-
-                //Es ist nicht mehr pausiert
-                currentPaused = false;
-
-                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist
-                messageObjArr.push({
-                    type: "toggle-paused",
-                    value: currentPaused
-                });
-
-                //Wenn Playlist nur aus 1 item besteht
-                if (value.length === 1) {
-
-                    //Zusaetzliche Nachricht an clients, welches das activeItem ist
-                    messageObjArr.push({
+                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist, welches das active-item und file-list
+                messageObjArr.push(
+                    {
+                        type: "toggle-paused",
+                        value: currentPaused
+                    },
+                    {
                         type: "active-item",
-                        value: value[0].activeItem
+                        value: value.activeItem
+                    },
+                    {
+                        type: "set-files",
+                        value: currentFiles
                     });
-                }
                 break;
-
 
             //neue Setlist laden (per RFID-Karte)
             case "set-rfid-playlist":
@@ -274,25 +210,25 @@ wss.on('connection', function connection(ws) {
                 //allowRandom merken
                 currentAllowRandom = configObj["cards"][value]["allowRandom"];
 
-                //Playlist und allowRandom in Datei merken fuer Neustart
-                fs.writeJsonSync('./lastSession.json', { path: currentPlaylist, allowRandom: currentAllowRandom, position: currentPosition });
+                //neue Playlist und allowRandom in Session-JSON-File schreiben
+                writeSessionJson();
 
                 //Setlist erstellen und starten
                 setPlaylist(false);
 
-                //Playlist Dir an Clients liefern
-                messageObjArr[0].value = currentPlaylist;
-
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
 
-                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist
-                messageObjArr.push({
-                    type: "toggle-paused",
-                    value: currentPaused
-                });
-
-                //TODO clients nicht ueber Wert informieren
+                //Nachricht an clients, dass nun nicht mehr pausiert ist
+                messageObjArr.push(
+                    {
+                        type: "toggle-paused",
+                        value: currentPaused
+                    },
+                    {
+                        type: "set-files",
+                        value: currentFiles
+                    });
                 break;
 
             //Song wurde vom Nutzer weitergeschaltet
@@ -347,13 +283,11 @@ wss.on('connection', function connection(ws) {
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
 
-                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist
+                //Nachricht an clients, dass nun nicht mehr pausiert ist
                 messageObjArr.push({
                     type: "toggle-paused",
                     value: currentPaused
                 });
-
-                //TODO clients nicht ueber increase:boolean informieren
                 break;
 
             //Sprung zu einem bestimmten Titel in Playlist
@@ -380,19 +314,17 @@ wss.on('connection', function connection(ws) {
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
 
-                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist
+                //Nachricht an clients, dass nun nicht mehr pausiert ist
                 messageObjArr.push({
                     type: "toggle-paused",
                     value: currentPaused
                 });
-
-                //TODO nicht an Clients senden?
                 break;
 
             //Lautstaerke aendern
             case 'change-volume':
 
-                //Wenn lauter werden soll, max. 100 setzen
+                //Wenn es lauter werden soll, max. 100 setzen
                 if (value) {
                     currentVolume = Math.min(100, currentVolume + 10);
                 }
@@ -407,8 +339,11 @@ wss.on('connection', function connection(ws) {
                 console.log(changeVolumeCommand)
                 execSync(changeVolumeCommand);
 
-                //Geaenderten Wert an Clients schicken
-                messageObjArr[0].value = currentVolume;
+                //Nachricht mit Volume an clients schicken 
+                messageObjArr.push({
+                    type: type,
+                    value: currentVolume
+                });
                 break;
 
             //Lautstaerke setzen
@@ -421,6 +356,12 @@ wss.on('connection', function connection(ws) {
                 let setVolumeCommand = "sudo amixer sset PCM " + value + "% -M";
                 console.log(setVolumeCommand)
                 execSync(setVolumeCommand);
+
+                //Nachricht mit Volume an clients schicken 
+                messageObjArr.push({
+                    type: type,
+                    value: currentVolume
+                });
                 break;
 
             //Pause-Status toggeln
@@ -432,8 +373,11 @@ wss.on('connection', function connection(ws) {
                 //Pause toggeln
                 player.playPause();
 
-                //Geaenderten Wert an Clients schicken
-                messageObjArr[0].value = currentPaused;
+                //Nachricht an clients ueber Paused-Status
+                messageObjArr.push({
+                    type: "toggle-paused",
+                    value: currentPaused
+                });
                 break;
 
             //Random toggle
@@ -445,12 +389,20 @@ wss.on('connection', function connection(ws) {
                 //Wenn random erlaubt ist
                 if (currentAllowRandom) {
 
-                    //Playlist mit neuem Random-Wert neu laden
+                    //Aktuelle Playlist mit neuem Random-Wert neu laden
                     setPlaylist();
                 }
 
-                //Geanderten Wert an Clients schicken
-                messageObjArr[0].value = currentRandom;
+                //Nachricht an clients ueber aktuellen Random-Wert und file-list
+                messageObjArr.push(
+                    {
+                        type: type,
+                        value: currentRandom
+                    },
+                    {
+                        type: "set-files",
+                        value: currentFiles
+                    });
                 break;
 
             //Innerhalb des Titels spulen
@@ -461,50 +413,37 @@ wss.on('connection', function connection(ws) {
 
                 //seek in item
                 player.seek(seekTo);
-
-                //TODO nicht per MessageObj schicken?
                 break;
         }
 
-        //Ueber Liste der MessageObjs gehen und Nachrichten an WS senden
-        for (ws of wss.clients) {
-            for (messageObj of messageObjArr)
-                try {
-                    ws.send(JSON.stringify(messageObj));
-                }
-                catch (e) { }
-        }
+        //Infos an Clients schicken
+        sendClientInfo(messageObjArr);
     });
 
-    //WS (einmalig beim Verbinden) ueber aktuelles Volume informieren
-    ws.send(JSON.stringify({
+    //WS einmalig bei der Verbindung ueber div. Wert informieren
+    let WSConnectObjectArr = [{
         type: "set-volume",
         value: currentVolume
-    }));
-
-    //WS (einmalig beim Verbinden) ueber aktuellen Position informieren
-    ws.send(JSON.stringify({
+    }, {
         type: "set-position",
         value: currentPosition
-    }));
-
-    //WS (einmalig beim Verbinden) ueber aktuellen PausedStatus informieren
-    ws.send(JSON.stringify({
+    }, {
         type: "toggle-paused",
         value: currentPaused
-    }));
-
-    //WS (einmalig beim Verbinden) ueber aktuelle Filelist informieren
-    ws.send(JSON.stringify({
+    }, {
         type: "set-files",
         value: currentFiles
-    }));
-
-    //WS (einmalig beim Verbinden) ueber aktuellen RandomState informieren
-    ws.send(JSON.stringify({
+    }, {
         type: "toggle-random",
         value: currentRandom
-    }));
+    }];
+
+    //Ueber Objekte gehen, die an WS geschickt werden
+    WSConnectObjectArr.forEach(messageObj, function () {
+
+        //Info an WS schicken
+        ws.send(JSON.stringify(messageObj));
+    });
 });
 
 //Timer-Funktion benachrichtigt regelmaessig die WS ueber aktuelle Position des Tracks
@@ -531,18 +470,13 @@ function startTimer() {
         let outputString = timelite.time.str(output);
 
         //Time-MessageObj erstellen
-        let messageObj = {
+        let messageObjArr = [{
             type: "time",
             value: outputString
-        };
+        }];
 
-        //Time-MessageObj an WS senden
-        for (ws of wss.clients) {
-            try {
-                ws.send(JSON.stringify(messageObj));
-            }
-            catch (e) { }
-        }
+        //Clients ueber aktuelle Zeit informieren
+        sendClientInfo(messageObjArr);
     });
 
     //Jede Sekunde die aktuelle Zeit innerhalb des Tracks liefern
@@ -563,8 +497,8 @@ function setPlaylist(reloadSession) {
         //Ueber Dateien in aktuellem Verzeichnis gehen
         fs.readdirSync(currentPlaylist).forEach(file => {
 
-            //mp4 (video) und mp3 (audio) files sammeln
-            if ([".mp4", ".mp3"].includes(path.extname(file).toLowerCase())) {
+            //mp3 (audio) files sammeln
+            if ([".mp3"].includes(path.extname(file).toLowerCase())) {
                 console.log("add file " + file);
                 currentFiles.push(currentPlaylist + "/" + file);
             }
@@ -583,12 +517,6 @@ function setPlaylist(reloadSession) {
         //Playlist-Datei laden und starten
         player.exec("loadlist " + progDir + "/playlist.txt");
 
-        //Liste des Dateinamen an Clients liefern
-        messageObjArr.push({
-            type: "set-files",
-            value: currentFiles
-        });
-
         //Wenn die Daten aus einer alten Session kommen
         if (reloadSession) {
 
@@ -603,4 +531,27 @@ function setPlaylist(reloadSession) {
     else {
         console.log("dir doesn't exist");
     }
+}
+
+//Infos der Session in File schreiben
+function writeSessionJson() {
+
+    //Position in Playlist zusammen mit anderen Merkmalen merken fuer den Neustart
+    fs.writeJsonSync('./lastSession.json', { path: currentPlaylist, allowRandom: currentAllowRandom, position: currentPosition });
+}
+
+//Infos ans WS-Clients schicken
+function sendClientInfo(messageObjArr) {
+
+    //Ueber Liste der MessageObjekte gehen
+    messageObjArr.forEach(messagObj, function () {
+
+        //Ueber Liste der WS gehen und Nachricht schicken
+        for (ws of wss.clients) {
+            try {
+                ws.send(JSON.stringify(messageObj));
+            }
+            catch (e) { }
+        }
+    });
 }
