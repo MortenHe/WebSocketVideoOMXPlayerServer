@@ -439,7 +439,7 @@ wss.on('connection', function connection(ws) {
     }];
 
     //Ueber Objekte gehen, die an WS geschickt werden
-    WSConnectObjectArr.forEach(messageObj, function () {
+    WSConnectObjectArr.forEach(messageObj => {
 
         //Info an WS schicken
         ws.send(JSON.stringify(messageObj));
@@ -543,8 +543,11 @@ function writeSessionJson() {
 //Infos ans WS-Clients schicken
 function sendClientInfo(messageObjArr) {
 
+    console.log(messageObjArr);
+
     //Ueber Liste der MessageObjekte gehen
-    messageObjArr.forEach(messagObj, function () {
+    messageObjArr.forEach(messageObj => {
+        //console.log(messageObj)
 
         //Ueber Liste der WS gehen und Nachricht schicken
         for (ws of wss.clients) {
