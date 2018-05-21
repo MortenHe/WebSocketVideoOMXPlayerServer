@@ -159,9 +159,6 @@ wss.on('connection', function connection(ws) {
             case "shutdown":
                 console.log("shutdown");
 
-                //TV ausschalten
-                execSync("echo 'standby 0' | cec-client -s -d 1");
-
                 //Pi herunterfahren
                 execSync("shutdown -h now");
                 break;
