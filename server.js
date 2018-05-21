@@ -543,8 +543,6 @@ function writeSessionJson() {
 //Infos ans WS-Clients schicken
 function sendClientInfo(messageObjArr) {
 
-    console.log(messageObjArr);
-
     //Ueber Liste der MessageObjekte gehen
     messageObjArr.forEach(messageObj => {
         //console.log(messageObj)
