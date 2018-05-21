@@ -202,7 +202,7 @@ wss.on('connection', function connection(ws) {
             case "set-rfid-playlist":
 
                 //Audio-Verzeichnis merken
-                currentPlaylist = "/media/usb_red/audio/" + configObj["cards"][value]["path"];
+                currentPlaylist = "/media/audio/" + configObj["cards"][value]["path"];
 
                 //allowRandom merken
                 currentAllowRandom = configObj["cards"][value]["allowRandom"];
