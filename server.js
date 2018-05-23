@@ -38,6 +38,7 @@ currentFiles = [];
 currentPaused = false;
 currentRandom = false;
 currentAllowRandom = false;
+currentActiveItem = "";
 
 //Lautstaerke zu Beginn setzen
 let initialVolumeCommand = "sudo amixer sset PCM " + currentVolume + "% -M";
@@ -78,13 +79,12 @@ player.on('track-change', () => {
     player.getProps(['length']);
 });
 
-/*	if (line === "ANS_ERROR=PROPERTY_UNAVAILABLE") {
-    return out.emit('playlist-finished')
-}*/
-
 //Wenn Playlist fertig ist
-player.on('playlist-finished', () => {
-    console.log("playlist finished")
+player.on('playlist-finish', () => {
+    console.log("playlist finished");
+
+    //Aktives Item zuruecksetzen
+    currentActiveItem = "";
 
     //Clients informieren, dass Playlist fertig ist (position -1, activeItem "")
     let messageObjArr = [{
@@ -93,7 +93,7 @@ player.on('playlist-finished', () => {
     },
     {
         type: "active-item",
-        value: ""
+        value: currentActiveItem
     }];
 
     //Infos an Clients schicken
@@ -108,6 +108,9 @@ try {
 
     //Playlist-Pfad laden
     currentPlaylist = lastSessionObj.path;
+
+    //Letztes aktives Item laden
+    currentActiveItem = lastSessionObj.activeItem;
 
     //Laden, ob Randon erlaubt ist
     currentAllowRandom = lastSessionObj.allowRandom;
@@ -159,6 +162,15 @@ wss.on('connection', function connection(ws) {
             case "shutdown":
                 console.log("shutdown");
 
+                //Shutdown-Info an Clients senden
+                messageObjArr.push({
+                    type: "shutdown",
+                    value: ""
+                });
+
+                //Shutdown-Info an Clients schicken
+                sendClientInfo(messageObjArr);
+
                 //Pi herunterfahren
                 execSync("shutdown -h now");
                 break;
@@ -172,6 +184,9 @@ wss.on('connection', function connection(ws) {
 
                 //Merken ob Random erlaubt ist
                 currentAllowRandom = value.allowRandom;
+
+                //aktives Item setzen
+                currentActiveItem = value.activeItem;
 
                 //neue Playlist und allowRandom in Session-JSON-File schreiben
                 writeSessionJson();
@@ -190,7 +205,7 @@ wss.on('connection', function connection(ws) {
                     },
                     {
                         type: "active-item",
-                        value: value.activeItem
+                        value: currentActiveItem
                     },
                     {
                         type: "set-files",
@@ -433,6 +448,9 @@ wss.on('connection', function connection(ws) {
     }, {
         type: "toggle-random",
         value: currentRandom
+    }, {
+        type: "active-item",
+        value: currentActiveItem
     }];
 
     //Ueber Objekte gehen, die an WS geschickt werden
@@ -534,7 +552,13 @@ function setPlaylist(reloadSession) {
 function writeSessionJson() {
 
     //Position in Playlist zusammen mit anderen Merkmalen merken fuer den Neustart
-    fs.writeJsonSync('./lastSession.json', { path: currentPlaylist, allowRandom: currentAllowRandom, position: currentPosition });
+    fs.writeJsonSync('./lastSession.json',
+        {
+            path: currentPlaylist,
+            activeItem: currentActiveItem,
+            allowRandom: currentAllowRandom,
+            position: currentPosition
+        });
 }
 
 //Infos ans WS-Clients schicken
