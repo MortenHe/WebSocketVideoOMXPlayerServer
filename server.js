@@ -210,6 +210,10 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-files",
                         value: currentFiles
+                    },
+                    {
+                        type: "allow-random",
+                        value: currentAllowRandom
                     });
                 break;
 
@@ -240,6 +244,10 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-files",
                         value: currentFiles
+                    },
+                    {
+                        type: "allow-random",
+                        value: currentAllowRandom
                     });
                 break;
 
@@ -451,6 +459,9 @@ wss.on('connection', function connection(ws) {
     }, {
         type: "active-item",
         value: currentActiveItem
+    }, {
+        type: "allow-random",
+        value: currentAllowRandom
     }];
 
     //Ueber Objekte gehen, die an WS geschickt werden
