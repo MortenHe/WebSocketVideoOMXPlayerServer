@@ -1,5 +1,9 @@
 //OMXPlayer + Wrapper anlegen
-//TODO
+var OmxManager = require('omx-manager');
+var manager = new OmxManager();
+
+//gerade laufendes Video
+var camera;
 
 //WebSocketServer anlegen und starten
 const WebSocket = require('ws');
@@ -29,32 +33,18 @@ currentPaused = false;
 currentRandom = false;
 currentActiveItem = "";
 
+//Liste der konkreten Dateinamen (als symlinks)
+symlinkFiles = [];
+
+//wurde umschalten (und damit Video End Callback) vom Nutzer getriggert
+userTriggeredChange = false;
+
 //Lautstaerke zu Beginn setzen
 let initialVolumeCommand = "sudo amixer sset PCM " + currentVolume + "% -M";
 console.log(initialVolumeCommand)
 execSync(initialVolumeCommand);
 
-//Wenn ein neues Video startet
-//TODO
-/*
-player.on('next-video', () => {
 
-    //
-    currentPosition = + 1;
-
-    //neue Position in Session-JSON-File schreiben
-    writeSessionJson();
-
-    //Position an Clients senden
-    let messageObjArr = [{
-        type: "set-position",
-        value: currentPosition
-    }];
-
-    //Position-Infos an Clients schicken
-    sendClientInfo(messageObjArr);
-});
-*/
 
 //Wenn Playlist fertig ist
 //TODO
@@ -82,7 +72,7 @@ player.on('playlist-finish', () => {
 
 //Infos aus letzter Session auslesen
 try {
-    console.log("Load playlist from last session");
+    console.log("Try to load playlist from last session");
 
     //JSON-Objekt aus Datei holen
     const lastSessionObj = fs.readJsonSync('./lastSession.json');
@@ -146,8 +136,11 @@ wss.on('connection', function connection(ws) {
             case "set-video-playlist": case "set-rfid-playlist":
                 console.log(type + JSON.stringify(value));
 
-                //Dateiliste zurecksetzen
+                //Dateiliste (Anzeigenamen) zurecksetzen
                 currentFiles = [];
+
+                //Dateiliste (Dateinamen im Sytem) zuruecksetzen
+                symlinkFiles = [];
 
                 //Symlink-Dir leeren
                 fs.emptyDirSync(symlinkDir);
@@ -161,7 +154,10 @@ wss.on('connection', function connection(ws) {
                     //nummerertien Symlink erstellen
                     const srcpath = videoDir + "/" + file.mode + "/" + file.path;
                     const dstpath = symlinkDir + "/" + index + "-" + file.name + ".mp4";
-                    fs.ensureSymlinkSync(srcpath, dstpath)
+                    fs.ensureSymlinkSync(srcpath, dstpath);
+
+                    //Symlink-Dateinamen merken
+                    symlinkFiles.push(dstpath);
                 });
 
                 //Playlist von vorne starten
@@ -174,7 +170,7 @@ wss.on('connection', function connection(ws) {
                 writeSessionJson();
 
                 //TODO
-                //start video
+                startVideo();
 
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
@@ -357,12 +353,16 @@ wss.on('connection', function connection(ws) {
             //Pause-Status toggeln
             case 'toggle-paused':
 
+                //Pause toggeln
+                if (currentPaused) {
+                    camera.play();
+                }
+                else {
+                    camera.pause();
+                }
+
                 //Pausenstatus toggeln
                 currentPaused = !currentPaused;
-
-                //Pause toggeln
-                //TODO
-                //player.playPause();
 
                 //Nachricht an clients ueber Paused-Status
                 messageObjArr.push({
@@ -374,9 +374,12 @@ wss.on('connection', function connection(ws) {
             //Innerhalb des Titels spulen
             case "seek":
 
-                //seek in item
-                //TODO
-                //player.seek(seekTo);
+                if (value) {
+                    camera.seekForward();
+                }
+                else {
+                    camera.seekBackward();
+                }
                 break;
         }
 
@@ -479,4 +482,39 @@ function sendClientInfo(messageObjArr) {
             catch (e) { }
         }
     });
+}
+
+function startVideo() {
+
+    let video = symlinkFiles[currentPosition];
+    console.log("play video " + video);
+
+    //Video mit schwarzem Hintergrund starten
+    if (camera) {
+        camera.stop();
+    }
+    camera = manager.create(video, { "-b": true });
+    camera.play();
+    camera.on('end', function () {
+
+        if (!userTriggeredChange) {
+
+            currentPosition = + 1;
+
+            //neue Position in Session-JSON-File schreiben
+            writeSessionJson();
+
+            //Position an Clients senden
+            let messageObjArr = [{
+                type: "set-position",
+                value: currentPosition
+            }];
+
+            //Position-Infos an Clients schicken
+            sendClientInfo(messageObjArr);
+        }
+    });
+
+    userTriggeredChange = false;
+
 }
