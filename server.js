@@ -22,7 +22,7 @@ const configObj = fs.readJsonSync('./config.json');
 const videoDir = "/media/usb_red/video";
 
 //Wo liegen die Symlinks auf die Videos
-const symlinkDir = "/home/martin/mh_prog/symlinkDir";
+const symlinkDir = "/home/pi/mh_prog/symlinkDir";
 
 //Aktuelle Infos zu Volume / Position in Song / Position innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentVolume = 50;
@@ -145,9 +145,9 @@ wss.on('connection', function connection(ws) {
                 execSync("shutdown -h now");
                 break;
 
-            //neue Playlist laden (ueber Browser-Aufruf)
-            case "set-video-playlist":
-                console.log("set video-playlist " + JSON.stringify(value));
+            //neue Playlist laden (ueber Browser-Aufruf) oder per RFID-Karte
+            case "set-video-playlist": case "set-rfid-playlist":
+                console.log(type + JSON.stringify(value));
 
                 //Dateiliste zurecksetzen
                 currentFiles = [];
@@ -201,12 +201,6 @@ wss.on('connection', function connection(ws) {
                         value: currentPosition
                     })
                     ;
-                break;
-
-            //neue Setlist laden (per RFID-Karte)
-            case "set-rfid-playlist":
-
-                //TODO: zusammen mit Playlist moeglich?
                 break;
 
             //Video wurde vom Nutzer weitergeschaltet
