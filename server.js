@@ -162,13 +162,16 @@ wss.on('connection', function connection(ws) {
                     currentFiles.push(file.name);
 
                     //nummerertien Symlink erstellen
-                    const srcpath = videoDir + "/" + file.path;
+                    const srcpath = videoDir + "/" + file.mode + "/" + file.path;
                     const dstpath = symlinkDir + "/" + index + "-" + file.name + ".mp4";
                     fs.ensureSymlinkSync(srcpath, dstpath)
                 });
 
+                //Playlist von vorne starten
+                currentPosition = 0;
+
                 //aktives Item setzen, wenn es sich nur um ein einzelnes Video handelt
-                currentActiveItem = value.activeItem ? value.activeItem : "";
+                currentActiveItem = value.length === 1 ? value[0].path : "";
 
                 //Files, Position, etc. Session-JSON-File schreiben
                 writeSessionJson();
@@ -192,7 +195,12 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-files",
                         value: currentFiles
-                    });
+                    },
+                    {
+                        type: "set-position",
+                        value: currentPosition
+                    })
+                    ;
                 break;
 
             //neue Setlist laden (per RFID-Karte)

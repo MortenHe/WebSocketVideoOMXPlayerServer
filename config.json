@@ -1,20 +1,14 @@
 {
-    "path": {
-        "pi": {
-            "progDir": "/home/pi/mh_prog"
-        },
-        "vb": {
-            "progDir": "/home/martin/mh_prog"
-        }
-    },
     "cards": {
         "278820847058": {
-            "path": "hsp/janosch/emil-gruenbaer",
-            "allowRandom": false
+            "path": "misc/vid1.mp4",
+            "name": "Andis Welt - Hier bin ich",
+            "mode": "kinder"
         },
         "229747144066": {
-            "path": "kindermusik/rz/starke-kinder",
-            "allowRandom": true
+            "path": "bebl/banan.mp4",
+            "name": "Benjamin Blümchen - Der Bananendieb",
+            "mode": "kinder"
         }
     }
 }
