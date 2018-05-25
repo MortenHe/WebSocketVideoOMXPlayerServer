@@ -413,6 +413,9 @@ wss.on('connection', function connection(ws) {
                     setPlaylist();
                 }
 
+                //Es ist nicht mehr pausiert
+                currentPaused = false;
+
                 //Nachricht an clients ueber aktuellen Random-Wert und file-list
                 messageObjArr.push(
                     {
@@ -422,6 +425,9 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-files",
                         value: currentFiles
+                    }, {
+                        type: "toggle-paused",
+                        value: currentPaused
                     });
                 break;
 
