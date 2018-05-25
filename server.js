@@ -1,6 +1,5 @@
-//Mplayer + Wrapper anlegen
-const createPlayer = require('mplayer-wrapper');
-const player = createPlayer();
+//OMXPlayer + Wrapper anlegen
+//TODO
 
 //WebSocketServer anlegen und starten
 const WebSocket = require('ws');
@@ -9,35 +8,28 @@ const wss = new WebSocket.Server({ port: 8080, clientTracking: true });
 //Zeit Formattierung laden: [5, 13, 22] => 05:13:22
 const timelite = require('timelite');
 
-//lodash laden (padstart)
-var _ = require('lodash');
-
 //Filesystem und Path Abfragen fuer Playlist
 const path = require('path');
 const fs = require('fs-extra');
 
-//Array Shuffle Funktion
-var shuffle = require('shuffle-array');
-
 //Befehle auf Kommandzeile ausfuehren
 const { execSync } = require('child_process');
-
-//Je nach Ausfuerung auf pi oder in virtualbox gibt es unterschiedliche Pfade, Mode wird ueber command line uebergeben: node server.js vb
-const mode = process.argv[2] ? process.argv[2] : "pi";
 
 //Wert fuer Pfad aus config.json auslesen
 const configObj = fs.readJsonSync('./config.json');
 
-//Verzeichnis in dem die playlist.txt hinterlegt wird
-const progDir = configObj["path"][mode]["progDir"];
+//Verzeichnis wo die Videos liegen
+const videoDir = "/media/usb_red/video";
+
+//Wo liegen die Symlinks auf die Videos
+const symlinkDir = "/home/martin/mh_prog/symlinkDir";
 
 //Aktuelle Infos zu Volume / Position in Song / Position innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentVolume = 50;
-currentPosition = 0;
+currentPosition = -1;
 currentFiles = [];
 currentPaused = false;
 currentRandom = false;
-currentAllowRandom = false;
 currentActiveItem = "";
 
 //Lautstaerke zu Beginn setzen
@@ -45,11 +37,13 @@ let initialVolumeCommand = "sudo amixer sset PCM " + currentVolume + "% -M";
 console.log(initialVolumeCommand)
 execSync(initialVolumeCommand);
 
-//Wenn bei Track change der Filename geliefert wird
-player.on('filename', (filename) => {
+//Wenn ein neues Video startet
+//TODO
+/*
+player.on('next-video', () => {
 
-    //Position in Playlist ermitteln
-    currentPosition = currentFiles.indexOf(currentPlaylist + "/" + filename);
+    //
+    currentPosition = + 1;
 
     //neue Position in Session-JSON-File schreiben
     writeSessionJson();
@@ -63,23 +57,11 @@ player.on('filename', (filename) => {
     //Position-Infos an Clients schicken
     sendClientInfo(messageObjArr);
 });
-
-//Wenn Laenge des Tracks bei Track change geliefert wird
-player.on('length', function (val) {
-    console.log("Laenge ist " + val);
-});
-
-//Wenn sich ein Titel aendert (durch Nutzer oder durch den Player)
-player.on('track-change', () => {
-
-    //Neuen Dateinamen liefern
-    player.getProps(['filename']);
-
-    //Laenge des Titels liefern
-    player.getProps(['length']);
-});
+*/
 
 //Wenn Playlist fertig ist
+//TODO
+/*
 player.on('playlist-finish', () => {
     console.log("playlist finished");
 
@@ -99,42 +81,30 @@ player.on('playlist-finish', () => {
     //Infos an Clients schicken
     sendClientInfo(messageObjArr);
 });
+*/
 
 //Infos aus letzter Session auslesen
 try {
+    console.log("Load playlist from last session");
 
     //JSON-Objekt aus Datei holen
     const lastSessionObj = fs.readJsonSync('./lastSession.json');
 
-    //Playlist-Pfad laden
-    currentPlaylist = lastSessionObj.path;
+    //Dateinamen aus letzter Session laden
+    currentFiles = lastSessionObj.currentFiles;
 
     //Letztes aktives Item laden
     currentActiveItem = lastSessionObj.activeItem;
 
-    //Laden, ob Randon erlaubt ist
-    currentAllowRandom = lastSessionObj.allowRandom;
-
     //letzte Position in Playlist laden
     currentPosition = lastSessionObj.position;
-}
-
-//wenn lastSession.json noch nicht existiert
-catch (e) {
-
-    //keine Playlist laden
-    currentPlaylist = "";
-}
-
-//Wenn eine Playlist aus der vorherigen Session geladen wurde
-if (currentPlaylist) {
-    console.log("Load playlist from last session " + currentPlaylist);
 
     //diese Playlist zu Beginn spielen
-    setPlaylist(true);
+    //TODO start video
 }
+catch (e) { }
 
-//TimeFunktion starten, die aktuelle Laufzeit des Titels liefert
+//TimeFunktion starten, die aktuelle Laufzeit des Videos liefert
 startTimer();
 
 //Wenn sich ein WebSocket mit dem WebSocketServer verbindet
@@ -176,23 +146,35 @@ wss.on('connection', function connection(ws) {
                 break;
 
             //neue Playlist laden (ueber Browser-Aufruf)
-            case "set-playlist":
-                console.log("set playlist " + JSON.stringify(value));
+            case "set-video-playlist":
+                console.log("set video-playlist " + JSON.stringify(value));
+
+                //Dateiliste zurecksetzen
+                currentFiles = [];
+
+                //Symlink-Dir leeren
+                fs.emptyDirSync(symlinkDir);
 
                 //Audio-Verzeichnis merken
-                currentPlaylist = value.dir;
+                value.forEach((file, index) => {
 
-                //Merken ob Random erlaubt ist
-                currentAllowRandom = value.allowRandom;
+                    //Dateinamen sammeln ("Conni back Pizza")
+                    currentFiles.push(file.name);
 
-                //aktives Item setzen
-                currentActiveItem = value.activeItem;
+                    //nummerertien Symlink erstellen
+                    const srcpath = videoDir + "/" + file.path;
+                    const dstpath = symlinkDir + "/" + index + "-" + file.name + ".mp4";
+                    fs.ensureSymlinkSync(srcpath, dstpath)
+                });
 
-                //neue Playlist und allowRandom in Session-JSON-File schreiben
+                //aktives Item setzen, wenn es sich nur um ein einzelnes Video handelt
+                currentActiveItem = value.activeItem ? value.activeItem : "";
+
+                //Files, Position, etc. Session-JSON-File schreiben
                 writeSessionJson();
 
-                //Setlist erstellen und starten
-                setPlaylist(false);
+                //TODO
+                //start video
 
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
@@ -210,50 +192,18 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-files",
                         value: currentFiles
-                    },
-                    {
-                        type: "allow-random",
-                        value: currentAllowRandom
                     });
                 break;
 
             //neue Setlist laden (per RFID-Karte)
             case "set-rfid-playlist":
 
-                //Audio-Verzeichnis merken
-                currentPlaylist = "/media/audio/" + configObj["cards"][value]["path"];
-
-                //allowRandom merken
-                currentAllowRandom = configObj["cards"][value]["allowRandom"];
-
-                //neue Playlist und allowRandom in Session-JSON-File schreiben
-                writeSessionJson();
-
-                //Setlist erstellen und starten
-                setPlaylist(false);
-
-                //Es ist nicht mehr pausiert
-                currentPaused = false;
-
-                //Nachricht an clients, dass nun nicht mehr pausiert ist
-                messageObjArr.push(
-                    {
-                        type: "toggle-paused",
-                        value: currentPaused
-                    },
-                    {
-                        type: "set-files",
-                        value: currentFiles
-                    },
-                    {
-                        type: "allow-random",
-                        value: currentAllowRandom
-                    });
+                //TODO: zusammen mit Playlist moeglich?
                 break;
 
-            //Song wurde vom Nutzer weitergeschaltet
-            case 'change-song':
-                console.log("change-song " + value);
+            //Video wurde vom Nutzer weitergeschaltet
+            case 'change-item':
+                console.log("change-item " + value);
 
                 //wenn der naechste Song kommen soll
                 if (value) {
@@ -262,7 +212,9 @@ wss.on('connection', function connection(ws) {
                     if (currentPosition < (currentFiles.length - 1)) {
 
                         //zum naechsten Titel springen
-                        player.next();
+                        currentPosition += 1;
+                        //TODO
+                        //player.next();
                     }
 
                     //wir sind beim letzten Titel
@@ -270,7 +222,9 @@ wss.on('connection', function connection(ws) {
 
                         //Wenn Titel pausiert war, wieder unpausen
                         if (currentPaused) {
-                            player.playPause();
+
+                            //TODO
+                            //player.playPause();
                         }
                         console.log("kein next beim letzten Track");
                     }
@@ -283,31 +237,41 @@ wss.on('connection', function connection(ws) {
                     if (currentPosition > 0) {
 
                         //zum vorherigen Titel springen
-                        player.previous();
+                        currentPosition -= 1;
+                        //TODO
+                        //player.previous();
                     }
 
                     //wir sind beim 1. Titel
                     else {
 
                         //Playlist nochmal von vorne starten
-                        player.seekPercent(0);
+                        //TODO
+                        //player.seekPercent(0);
                         console.log("1. Titel von vorne");
 
                         //Wenn Titel pausiert war, wieder unpausen
+                        //TODO check
+                        /*
                         if (currentPaused) {
                             player.playPause();
                         }
+                        */
                     }
                 }
 
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
 
-                //Nachricht an clients, dass nun nicht mehr pausiert ist
-                messageObjArr.push({
-                    type: "toggle-paused",
-                    value: currentPaused
-                });
+                //Nachricht an clients, dass nun nicht mehr pausiert ist und neue Position
+                messageObjArr.push(
+                    {
+                        type: "toggle-paused",
+                        value: currentPaused
+                    }, {
+                        type: "set-position",
+                        value: currentPosition
+                    });
                 break;
 
             //Sprung zu einem bestimmten Titel in Playlist
@@ -321,24 +285,31 @@ wss.on('connection', function connection(ws) {
                 if (jumpTo !== 0) {
 
                     //zu gewissem Titel springen
-                    player.exec("pt_step " + jumpTo);
+                    //TODO
+                    currentPosition = value;
+                    //player.exec("pt_step " + jumpTo);
                 }
 
                 //es wurde auf den bereits laufenden Titel geklickt
                 else {
 
                     //diesen wieder von vorne abspielen
-                    player.seekPercent(0);
+                    //TODO
+                    //player.seekPercent(0);
                 }
 
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
 
-                //Nachricht an clients, dass nun nicht mehr pausiert ist
-                messageObjArr.push({
-                    type: "toggle-paused",
-                    value: currentPaused
-                });
+                //Nachricht an clients, dass nun nicht mehr pausiert ist und aktuelle Position in Playlist
+                messageObjArr.push(
+                    {
+                        type: "toggle-paused",
+                        value: currentPaused
+                    }, {
+                        type: "set-position",
+                        value: currentPosition
+                    });
                 break;
 
             //Lautstaerke aendern
@@ -391,7 +362,8 @@ wss.on('connection', function connection(ws) {
                 currentPaused = !currentPaused;
 
                 //Pause toggeln
-                player.playPause();
+                //TODO
+                //player.playPause();
 
                 //Nachricht an clients ueber Paused-Status
                 messageObjArr.push({
@@ -400,45 +372,12 @@ wss.on('connection', function connection(ws) {
                 });
                 break;
 
-            //Random toggle
-            case 'toggle-random':
-
-                //Random-Wert togglen
-                currentRandom = !currentRandom;
-
-                //Wenn random erlaubt ist
-                if (currentAllowRandom) {
-
-                    //Aktuelle Playlist mit neuem Random-Wert neu laden
-                    setPlaylist();
-                }
-
-                //Es ist nicht mehr pausiert
-                currentPaused = false;
-
-                //Nachricht an clients ueber aktuellen Random-Wert und file-list
-                messageObjArr.push(
-                    {
-                        type: type,
-                        value: currentRandom
-                    },
-                    {
-                        type: "set-files",
-                        value: currentFiles
-                    }, {
-                        type: "toggle-paused",
-                        value: currentPaused
-                    });
-                break;
-
             //Innerhalb des Titels spulen
             case "seek":
 
-                //+/- 10 Sek
-                let seekTo = value ? 10 : -10;
-
                 //seek in item
-                player.seek(seekTo);
+                //TODO
+                //player.seek(seekTo);
                 break;
         }
 
@@ -460,14 +399,8 @@ wss.on('connection', function connection(ws) {
         type: "set-files",
         value: currentFiles
     }, {
-        type: "toggle-random",
-        value: currentRandom
-    }, {
         type: "active-item",
         value: currentActiveItem
-    }, {
-        type: "allow-random",
-        value: currentAllowRandom
     }];
 
     //Ueber Objekte gehen, die an WS geschickt werden
@@ -483,6 +416,8 @@ function startTimer() {
     console.log("startTimer");
 
     //Wenn time_pos property geliefert wirde
+    //TODO
+    /*
     player.on('time_pos', (totalSecondsFloat) => {
 
         //Float zu int: 13.4323 => 13
@@ -515,54 +450,7 @@ function startTimer() {
     setInterval(() => {
         player.getProps(['time_pos']);
     }, 1000);
-}
-
-//Playlist erstellen und starten
-function setPlaylist(reloadSession) {
-
-    //Sicherstellen, dass Verzeichnis existiert, aus dem die Dateien geladen werden sollen
-    if (fs.existsSync(currentPlaylist)) {
-
-        //Liste der files zuruecksetzen
-        currentFiles = [];
-
-        //Ueber Dateien in aktuellem Verzeichnis gehen
-        fs.readdirSync(currentPlaylist).forEach(file => {
-
-            //mp3 (audio) files sammeln
-            if ([".mp3"].includes(path.extname(file).toLowerCase())) {
-                console.log("add file " + file);
-                currentFiles.push(currentPlaylist + "/" + file);
-            }
-        });
-
-        //Bei Random und erlaubtem Random
-        if (currentRandom && currentAllowRandom) {
-
-            //FileArray shuffeln
-            shuffle(currentFiles);
-        }
-
-        //Playlist-Datei schreiben (1 Zeile pro item)
-        fs.writeFileSync(progDir + "/playlist.txt", currentFiles.join("\n"));
-
-        //Playlist-Datei laden und starten
-        player.exec("loadlist " + progDir + "/playlist.txt");
-
-        //Wenn die Daten aus einer alten Session kommen
-        if (reloadSession) {
-
-            //zu gewissem Titel springen, wenn nicht sowieso der erste Titel
-            if (currentPosition > 0) {
-                player.exec("pt_step " + currentPosition);
-            }
-        }
-    }
-
-    //Verzeichnis existiert nicht
-    else {
-        console.log("dir doesn't exist");
-    }
+    */
 }
 
 //Infos der Session in File schreiben
@@ -571,9 +459,8 @@ function writeSessionJson() {
     //Position in Playlist zusammen mit anderen Merkmalen merken fuer den Neustart
     fs.writeJsonSync('./lastSession.json',
         {
-            path: currentPlaylist,
+            currentFiles: currentFiles,
             activeItem: currentActiveItem,
-            allowRandom: currentAllowRandom,
             position: currentPosition
         });
 }
