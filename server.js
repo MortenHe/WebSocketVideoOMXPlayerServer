@@ -15,9 +15,6 @@ const fs = require('fs-extra');
 //Befehle auf Kommandzeile ausfuehren
 const { execSync } = require('child_process');
 
-//Wert fuer Pfad aus config.json auslesen
-const configObj = fs.readJsonSync('./config.json');
-
 //Verzeichnis wo die Videos liegen
 const videoDir = "/media/usb_red/video";
 
