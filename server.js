@@ -44,53 +44,6 @@ let initialVolumeCommand = "sudo amixer sset PCM " + currentVolume + "% -M";
 console.log(initialVolumeCommand)
 execSync(initialVolumeCommand);
 
-
-
-//Wenn Playlist fertig ist
-//TODO
-/*
-player.on('playlist-finish', () => {
-    console.log("playlist finished");
-
-    //Aktives Item zuruecksetzen
-    currentActiveItem = "";
-
-    //Clients informieren, dass Playlist fertig ist (position -1, activeItem "")
-    let messageObjArr = [{
-        type: "set-position",
-        value: -1
-    },
-    {
-        type: "active-item",
-        value: currentActiveItem
-    }];
-
-    //Infos an Clients schicken
-    sendClientInfo(messageObjArr);
-});
-*/
-
-//Infos aus letzter Session auslesen
-try {
-    console.log("Try to load playlist from last session");
-
-    //JSON-Objekt aus Datei holen
-    const lastSessionObj = fs.readJsonSync('./lastSession.json');
-
-    //Dateinamen aus letzter Session laden
-    currentFiles = lastSessionObj.currentFiles;
-
-    //Letztes aktives Item laden
-    currentActiveItem = lastSessionObj.activeItem;
-
-    //letzte Position in Playlist laden
-    currentPosition = lastSessionObj.position;
-
-    //diese Playlist zu Beginn spielen
-    //TODO start video
-}
-catch (e) { }
-
 //TimeFunktion starten, die aktuelle Laufzeit des Videos liefert
 startTimer();
 
@@ -166,10 +119,10 @@ wss.on('connection', function connection(ws) {
                 //aktives Item setzen, wenn es sich nur um ein einzelnes Video handelt
                 currentActiveItem = value.length === 1 ? value[0].path : "";
 
-                //Files, Position, etc. Session-JSON-File schreiben
-                writeSessionJson();
+                //Nutzer hat vorheriges Video beendet durch Start der neuen Playlist
+                userTriggeredChange = true;
 
-                //TODO
+                //Video starten
                 startVideo();
 
                 //Es ist nicht mehr pausiert
@@ -192,8 +145,7 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-position",
                         value: currentPosition
-                    })
-                    ;
+                    });
                 break;
 
             //Video wurde vom Nutzer weitergeschaltet
@@ -208,8 +160,12 @@ wss.on('connection', function connection(ws) {
 
                         //zum naechsten Titel springen
                         currentPosition += 1;
-                        //TODO
-                        //player.next();
+
+                        //User hat Ende des Videos getriggert => nicht automatisch einen Schritt weitergehen
+                        userTriggeredChange = true;
+
+                        //Video starten
+                        startVideo();
                     }
 
                     //wir sind beim letzten Titel
@@ -218,10 +174,10 @@ wss.on('connection', function connection(ws) {
                         //Wenn Titel pausiert war, wieder unpausen
                         if (currentPaused) {
 
-                            //TODO
-                            //player.playPause();
+                            //Video wieder abspielen
+                            camera.play();
                         }
-                        console.log("kein next beim letzten Track");
+                        console.log("kein next beim letzten Titel");
                     }
                 }
 
@@ -233,25 +189,25 @@ wss.on('connection', function connection(ws) {
 
                         //zum vorherigen Titel springen
                         currentPosition -= 1;
-                        //TODO
-                        //player.previous();
+
+                        //User hat Ende des Videos getriggert => nicht automatisch einen Schritt weitergehen
+                        userTriggeredChange = true;
+
+                        //Video starten
+                        startVideo();
                     }
 
                     //wir sind beim 1. Titel
                     else {
 
                         //Playlist nochmal von vorne starten
-                        //TODO
-                        //player.seekPercent(0);
                         console.log("1. Titel von vorne");
+                        camera.rewind();
 
                         //Wenn Titel pausiert war, wieder unpausen
-                        //TODO check
-                        /*
                         if (currentPaused) {
-                            player.playPause();
+                            player.play();
                         }
-                        */
                     }
                 }
 
@@ -280,17 +236,20 @@ wss.on('connection', function connection(ws) {
                 if (jumpTo !== 0) {
 
                     //zu gewissem Titel springen
-                    //TODO
                     currentPosition = value;
-                    //player.exec("pt_step " + jumpTo);
+
+                    //Nutzer hat Track ausgewaehlt
+                    userTriggeredChange = true;
+
+                    //Video starten
+                    startVideo();
                 }
 
                 //es wurde auf den bereits laufenden Titel geklickt
                 else {
 
                     //diesen wieder von vorne abspielen
-                    //TODO
-                    //player.seekPercent(0);
+                    camera.rewind();
                 }
 
                 //Es ist nicht mehr pausiert
@@ -353,10 +312,12 @@ wss.on('connection', function connection(ws) {
             //Pause-Status toggeln
             case 'toggle-paused':
 
-                //Pause toggeln
+                //Wenn gerade pausiert, Video wieder abspielen
                 if (currentPaused) {
                     camera.play();
                 }
+
+                //Video laueft gerade, also pausieren
                 else {
                     camera.pause();
                 }
@@ -374,9 +335,12 @@ wss.on('connection', function connection(ws) {
             //Innerhalb des Titels spulen
             case "seek":
 
+                //Vorwaertes spulen
                 if (value) {
                     camera.seekForward();
                 }
+
+                //Rueckwarts spulen
                 else {
                     camera.seekBackward();
                 }
@@ -455,18 +419,6 @@ function startTimer() {
     */
 }
 
-//Infos der Session in File schreiben
-function writeSessionJson() {
-
-    //Position in Playlist zusammen mit anderen Merkmalen merken fuer den Neustart
-    fs.writeJsonSync('./lastSession.json',
-        {
-            currentFiles: currentFiles,
-            activeItem: currentActiveItem,
-            position: currentPosition
-        });
-}
-
 //Infos ans WS-Clients schicken
 function sendClientInfo(messageObjArr) {
 
@@ -484,37 +436,99 @@ function sendClientInfo(messageObjArr) {
     });
 }
 
+//Video starten
 function startVideo() {
 
+    //Symlink aus aktueller Position in Playlist ermitteln
     let video = symlinkFiles[currentPosition];
     console.log("play video " + video);
 
-    //Video mit schwarzem Hintergrund starten
+    //Wenn gerade ein Video laueft, dieses stoppen
     if (camera) {
+        console.log("stop video");
         camera.stop();
     }
+
+    //Video mit schwarzem Hintergrund erzeugen und starten
     camera = manager.create(video, { "-b": true });
     camera.play();
+
+    //Beim Ende eines Videos
     camera.on('end', function () {
+        console.log("video ended");
 
+        console.log("user trigger " + userTriggeredChange);
+
+        //Wenn das Ende nicht vom Nutzer getriggert wurde (durch prev / next click)
         if (!userTriggeredChange) {
+            console.log("end after playback");
 
-            currentPosition = + 1;
+            //Wenn wir noch nicht beim letzten Video waren
+            if (currentPosition < (symlinkFiles.length - 1)) {
+                console.log("play next video");
 
-            //neue Position in Session-JSON-File schreiben
-            writeSessionJson();
+                //zum naechsten Item in der Playlist gehen
+                currentPosition = + 1;
 
-            //Position an Clients senden
-            let messageObjArr = [{
-                type: "set-position",
-                value: currentPosition
-            }];
+                //Video starten
+                startVideo();
 
-            //Position-Infos an Clients schicken
-            sendClientInfo(messageObjArr);
+                //Position an Clients senden
+                let messageObjArr = [{
+                    type: "set-position",
+                    value: currentPosition
+                }];
+
+                //Position-Infos an Clients schicken
+                sendClientInfo(messageObjArr);
+            }
+
+            //wir waren beim letzten Video
+            else {
+                console.log("playlist over");
+
+                //Position zuruecksetzen
+                currentPosition = -1;
+
+                //Aktives Item zuruecksetzen
+                currentActiveItem = "";
+
+                //Files zuruecksetzen
+                currentFiles = [];
+
+                //Clients informieren, dass Playlist fertig ist (position -1, activeItem "")
+                let messageObjArr = [{
+                    type: "set-position",
+                    value: currentPosition
+                },
+                {
+                    type: "active-item",
+                    value: currentActiveItem
+                },
+                {
+                    type: "set-files",
+                    value: currentFiles
+                }];
+
+                //Infos an Clients schicken
+                sendClientInfo(messageObjArr);
+            }
+        }
+
+        //Video beendet, weil Nutzer prev / next geklickt hat
+        else {
+            console.log("video ended: triggered by user");
+
+            //Flag zuruecksetzen
+            userTriggeredChange = false;
         }
     });
 
-    userTriggeredChange = false;
+    //Leicht verzoegert
+    setTimeout(() => {
 
+        //Flag zuruecksetzen
+        console.log("Trigger false")
+        userTriggeredChange = false;
+    }, 1000);
 }
