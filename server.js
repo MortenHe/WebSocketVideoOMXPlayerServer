@@ -202,11 +202,13 @@ wss.on('connection', function connection(ws) {
 
                         //Playlist nochmal von vorne starten
                         console.log("1. Titel von vorne");
-                        camera.rewind();
+
+                        //10 min zurueck springen
+                        camera.previousChapter();
 
                         //Wenn Titel pausiert war, wieder unpausen
                         if (currentPaused) {
-                            player.play();
+                            camera.play();
                         }
                     }
                 }
@@ -248,8 +250,8 @@ wss.on('connection', function connection(ws) {
                 //es wurde auf den bereits laufenden Titel geklickt
                 else {
 
-                    //diesen wieder von vorne abspielen
-                    camera.rewind();
+                    //10 min zurueck springen
+                    camera.previousChapter();
                 }
 
                 //Es ist nicht mehr pausiert
@@ -310,7 +312,7 @@ wss.on('connection', function connection(ws) {
                 break;
 
             //Pause-Status toggeln
-            case 'toggle-paused':
+            case 'toggle-paused-restart':
 
                 //Wenn gerade pausiert, Video wieder abspielen
                 if (currentPaused) {
