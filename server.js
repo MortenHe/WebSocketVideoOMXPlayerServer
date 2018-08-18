@@ -20,7 +20,7 @@ const fs = require('fs-extra');
 const { execSync } = require('child_process');
 
 //Verzeichnis wo die Videos liegen
-const videoDir = "/media/usb_red/video";
+const videoDir = "/media/pi/usb_red/video";
 
 //Wo liegen die Symlinks auf die Videos
 const symlinkDir = "/home/pi/mh_prog/symlinkDir";
