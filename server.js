@@ -122,7 +122,7 @@ wss.on('connection', function connection(ws) {
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
 
-                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist, welches das active-item und file-list
+                //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist, welches das active-item, file-list und resetteten countdown
                 messageObjArr.push(
                     {
                         type: "toggle-paused",
@@ -139,6 +139,10 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-position",
                         value: currentPosition
+                    },
+                    {
+                        type: "set-countdown-time",
+                        value: currentCountdownTime
                     });
                 break;
 
