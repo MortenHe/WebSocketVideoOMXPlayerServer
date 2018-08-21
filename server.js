@@ -9,11 +9,7 @@ var camera;
 const WebSocket = require('ws');
 const wss = new WebSocket.Server({ port: 8080, clientTracking: true });
 
-//Zeit Formattierung laden: [5, 13, 22] => 05:13:22
-const timelite = require('timelite');
-
 //Filesystem und Path Abfragen fuer Playlist
-const path = require('path');
 const fs = require('fs-extra');
 
 //Befehle auf Kommandzeile ausfuehren
@@ -25,6 +21,9 @@ const videoDir = "/media/pi/usb_red/video";
 //Wo liegen die Symlinks auf die Videos
 const symlinkDir = "/home/pi/mh_prog/symlinkDir";
 
+//Zeit wie lange bis Shutdown durchgefuhert wird bei Inaktivitaet
+const countdownTime = 180;
+
 //Aktuelle Infos zu Volume / Position in Song / Position innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentVolume = 50;
 currentPosition = -1;
@@ -32,6 +31,7 @@ currentFiles = [];
 currentPaused = false;
 currentRandom = false;
 currentActiveItem = "";
+currentCountdownTime = countdownTime;
 
 //Liste der konkreten Dateinamen (als symlinks)
 symlinkFiles = [];
@@ -44,11 +44,8 @@ let initialVolumeCommand = "sudo amixer sset PCM " + currentVolume + "% -M";
 console.log(initialVolumeCommand)
 execSync(initialVolumeCommand);
 
-//Zeit wie lange bis Shutdown durchgefuhert wird bei Inaktivitaet
-var countdownTime = 10;
-
 //Countdown fuer Shutdown starten, weil gerade nichts passiert
-var countdownID = setInterval(countdownID, 1000);
+var countdownID = setInterval(countdown, 1000);
 
 //Wenn sich ein WebSocket mit dem WebSocketServer verbindet
 wss.on('connection', function connection(ws) {
@@ -73,27 +70,18 @@ wss.on('connection', function connection(ws) {
 
             //System herunterfahren
             case "shutdown":
-                console.log("shutdown");
-
-                //Shutdown-Info an Clients senden
-                messageObjArr.push({
-                    type: "shutdown",
-                    value: ""
-                });
-
-                //Shutdown-Info an Clients schicken
-                sendClientInfo(messageObjArr);
-
-                //TV ausschalten
-                execSync("echo standby 0 | cec-client -s -d 1");
-
-                //Pi herunterfahren
-                execSync("shutdown -h now");
+                shutdown();
                 break;
 
             //neue Playlist laden (ueber Browser-Aufruf) oder per RFID-Karte
             case "set-video-playlist": case "set-rfid-playlist":
                 console.log(type + JSON.stringify(value));
+
+                //Countdown fuer Shutdown wieder stoppen, weil nun etwas passiert
+                clearInterval(countdownID);
+
+                //Countdown-Zeit wieder zuruecksetzen
+                currentCountdownTime = countdownTime;
 
                 //Dateiliste (Anzeigenamen) zurecksetzen
                 currentFiles = [];
@@ -450,6 +438,9 @@ function startVideo() {
             else {
                 console.log("playlist over");
 
+                //Countdown fuer Shutdown zuruecksetzen und starten, weil gerade nichts mehr passiert
+                countdownID = setInterval(countdown, 1000);
+
                 //Position zuruecksetzen
                 currentPosition = -1;
 
@@ -498,18 +489,41 @@ function startVideo() {
 
 //Bei Inaktivitaet Countdown runterzaehlen und Shutdown ausfuehren
 function countdown() {
-    console.log("inactive: countdown");
+    console.log("inactive");
 
     //Wenn der Countdown noch nicht abgelaufen ist
-    if (countdownTime > 0) {
+    if (currentCountdownTime >= 0) {
+        console.log("shutdown in " + currentCountdownTime + " seconds");
+
+        //Anzahl der Sekunden bis Countdown an Clients schicken
+        sendClientInfo([{
+            type: "set-countdown-time",
+            value: currentCountdownTime
+        }]);
 
         //Zeit runterzaehlen
-        countdownTime--;
-        console.log("shutdown in " + countdownTime + " seconds");
+        currentCountdownTime--;
     }
 
-    //Countdown ist abgelaufen
+    //Countdown ist abgelaufen, Shutdown durchfuehren
     else {
-        console.log("shutdown");
+        shutdown();
     }
+}
+
+//Pi herunterfahren und TV ausschalten
+function shutdown() {
+    console.log("shutdown");
+
+    //Shutdown-Info an Clients schicken
+    sendClientInfo([{
+        type: "shutdown",
+        value: ""
+    }]);
+
+    //TV ausschalten
+    execSync("echo standby 0 | cec-client -s -d 1");
+
+    //Pi herunterfahren
+    execSync("shutdown -h now");
 }
