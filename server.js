@@ -44,8 +44,11 @@ let initialVolumeCommand = "sudo amixer sset PCM " + currentVolume + "% -M";
 console.log(initialVolumeCommand)
 execSync(initialVolumeCommand);
 
-//TimeFunktion starten, die aktuelle Laufzeit des Videos liefert
-startTimer();
+//Zeit wie lange bis Shutdown durchgefuhert wird bei Inaktivitaet
+var countdownTime = 10;
+
+//Countdown fuer Shutdown starten, weil gerade nichts passiert
+var countdownID = setInterval(countdownID, 1000);
 
 //Wenn sich ein WebSocket mit dem WebSocketServer verbindet
 wss.on('connection', function connection(ws) {
@@ -382,48 +385,6 @@ wss.on('connection', function connection(ws) {
     });
 });
 
-//Timer-Funktion benachrichtigt regelmaessig die WS ueber aktuelle Position des Tracks
-function startTimer() {
-    console.log("startTimer");
-
-    //Wenn time_pos property geliefert wirde
-    //TODO
-    /*
-    player.on('time_pos', (totalSecondsFloat) => {
-
-        //Float zu int: 13.4323 => 13
-        let totalSeconds = Math.trunc(totalSecondsFloat);
-        console.log('track progress is', totalSeconds);
-
-        //Umrechung der Sekunden in [h, m, s] fuer formattierte Darstellung
-        let hours = Math.floor(totalSeconds / 3600);
-        totalSeconds %= 3600;
-        let minutes = Math.floor(totalSeconds / 60);
-        let seconds = totalSeconds % 60;
-
-        //h, m, s-Werte in Array packen
-        let output = [hours, minutes, seconds];
-
-        //[2,44,1] => 02:44:01
-        let outputString = timelite.time.str(output);
-
-        //Time-MessageObj erstellen
-        let messageObjArr = [{
-            type: "time",
-            value: outputString
-        }];
-
-        //Clients ueber aktuelle Zeit informieren
-        sendClientInfo(messageObjArr);
-    });
-
-    //Jede Sekunde die aktuelle Zeit innerhalb des Tracks liefern
-    setInterval(() => {
-        player.getProps(['time_pos']);
-    }, 1000);
-    */
-}
-
 //Infos ans WS-Clients schicken
 function sendClientInfo(messageObjArr) {
 
@@ -478,14 +439,11 @@ function startVideo() {
                 //Video starten
                 startVideo();
 
-                //Position an Clients senden
-                let messageObjArr = [{
+                //Position-Infos an Clients schicken
+                sendClientInfo([{
                     type: "set-position",
                     value: currentPosition
-                }];
-
-                //Position-Infos an Clients schicken
-                sendClientInfo(messageObjArr);
+                }]);
             }
 
             //wir waren beim letzten Video
@@ -536,4 +494,22 @@ function startVideo() {
         console.log("Trigger false")
         userTriggeredChange = false;
     }, 1000);
+}
+
+//Bei Inaktivitaet Countdown runterzaehlen und Shutdown ausfuehren
+function countdown() {
+    console.log("inactive: countdown");
+
+    //Wenn der Countdown noch nicht abgelaufen ist
+    if (countdownTime > 0) {
+
+        //Zeit runterzaehlen
+        countdownTime--;
+        console.log("shutdown in " + countdownTime + " seconds");
+    }
+
+    //Countdown ist abgelaufen
+    else {
+        console.log("shutdown");
+    }
 }
