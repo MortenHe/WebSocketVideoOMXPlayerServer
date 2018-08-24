@@ -426,7 +426,7 @@ function startVideo() {
                 console.log("play next video");
 
                 //zum naechsten Item in der Playlist gehen
-                currentPosition = + 1;
+                currentPosition += 1;
 
                 //Video starten
                 startVideo();
@@ -488,7 +488,7 @@ function startVideo() {
         //Flag zuruecksetzen
         console.log("Trigger false")
         userTriggeredChange = false;
-    }, 1000);
+    }, 500);
 }
 
 //Bei Inaktivitaet Countdown runterzaehlen und Shutdown ausfuehren
