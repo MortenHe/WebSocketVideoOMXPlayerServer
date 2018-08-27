@@ -39,11 +39,6 @@ symlinkFiles = [];
 //wurde umschalten (und damit Video End Callback) vom Nutzer getriggert
 userTriggeredChange = false;
 
-//Lautstaerke zu Beginn setzen
-let initialVolumeCommand = "sudo amixer sset PCM " + currentVolume + "% -M";
-console.log(initialVolumeCommand)
-execSync(initialVolumeCommand);
-
 //Countdown fuer Shutdown starten, weil gerade nichts passiert
 var countdownID = setInterval(countdown, 1000);
 
@@ -168,14 +163,12 @@ wss.on('connection', function connection(ws) {
 
                     //wir sind beim letzten Titel
                     else {
+                        console.log("kein next beim letzten Titel");
 
                         //Wenn Titel pausiert war, wieder unpausen
                         if (currentPaused) {
-
-                            //Video wieder abspielen
                             camera.play();
                         }
-                        console.log("kein next beim letzten Titel");
                     }
                 }
 
@@ -197,8 +190,6 @@ wss.on('connection', function connection(ws) {
 
                     //wir sind beim 1. Titel
                     else {
-
-                        //Playlist nochmal von vorne starten
                         console.log("1. Titel von vorne");
 
                         //10 min zurueck springen
@@ -269,38 +260,25 @@ wss.on('connection', function connection(ws) {
             //Lautstaerke aendern
             case 'change-volume':
 
-                //Wenn es lauter werden soll, max. 100 setzen
+                //Wenn es lauter werden soll
                 if (value) {
+
+                    //neue Lautstaerke merken (max. 100)
                     currentVolume = Math.min(100, currentVolume + 10);
+
+                    //OMXPlayer lauter machen
+                    camera.increaseVolume();
                 }
 
-                //es soll leiser werden, min. 0 setzen
+                //es soll leiser werden
                 else {
+
+                    //neue Lautstaerke merken (min. 0)
                     currentVolume = Math.max(0, currentVolume - 10);
+
+                    //OMXPlayer leiser machen
+                    camera.decreaseVolume();
                 }
-
-                //Lautstaerke setzen
-                let changeVolumeCommand = "sudo amixer sset PCM " + currentVolume + "% -M";
-                console.log(changeVolumeCommand)
-                execSync(changeVolumeCommand);
-
-                //Nachricht mit Volume an clients schicken 
-                messageObjArr.push({
-                    type: type,
-                    value: currentVolume
-                });
-                break;
-
-            //Lautstaerke setzen
-            case 'set-volume':
-
-                //neue Lautstaerke merken 
-                currentVolume = value;
-
-                //Lautstaerke setzen
-                let setVolumeCommand = "sudo amixer sset PCM " + value + "% -M";
-                console.log(setVolumeCommand)
-                execSync(setVolumeCommand);
 
                 //Nachricht mit Volume an clients schicken 
                 messageObjArr.push({
@@ -353,7 +331,7 @@ wss.on('connection', function connection(ws) {
 
     //WS einmalig bei der Verbindung ueber div. Wert informieren
     let WSConnectObjectArr = [{
-        type: "set-volume",
+        type: "change-volume",
         value: currentVolume
     }, {
         type: "set-position",
@@ -407,8 +385,14 @@ function startVideo() {
         camera.stop();
     }
 
-    //Video mit schwarzem Hintergrund erzeugen und starten
-    camera = manager.create(video, { "-b": true });
+    //Start-Volumewert berechnen 0 -> -30.00 db, 100 -> 0.00 db)
+    let vol = (100 - currentVolume) * -0.3;
+
+    //Video mit schwarzem Hintergrund und passender Lautstaerke erzeugen und starten
+    camera = manager.create(video, {
+        "-b": true,
+        "--vol": vol
+    });
     camera.play();
 
     //Beim Ende eines Videos
