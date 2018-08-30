@@ -51,7 +51,6 @@ wss.on('connection', function connection(ws) {
 
         //Nachricht kommt als String -> in JSON Objekt konvertieren
         var obj = JSON.parse(message);
-        //console.log(obj)
 
         //Werte auslesen
         let type = obj.type;
@@ -360,7 +359,6 @@ function sendClientInfo(messageObjArr) {
 
     //Ueber Liste der MessageObjekte gehen
     messageObjArr.forEach(messageObj => {
-        //console.log(messageObj)
 
         //Ueber Liste der WS gehen und Nachricht schicken
         for (ws of wss.clients) {
@@ -385,7 +383,7 @@ function startVideo() {
         camera.stop();
     }
 
-    //Start-Volumewert berechnen 0 -> -30.00 db, 100 -> 0.00 db)
+    //aktuelles Start-Volumewert berechnen 0 -> -30.00 db, 100 -> 0.00 db)
     let vol = (100 - currentVolume) * -0.3;
 
     //Video mit schwarzem Hintergrund und passender Lautstaerke erzeugen und starten
@@ -398,7 +396,6 @@ function startVideo() {
     //Beim Ende eines Videos
     camera.on('end', function () {
         console.log("video ended");
-
         console.log("user trigger " + userTriggeredChange);
 
         //Wenn das Ende nicht vom Nutzer getriggert wurde (durch prev / next click)
