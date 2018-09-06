@@ -328,6 +328,40 @@ wss.on('connection', function connection(ws) {
                 });
                 break;
 
+            //Video stoppen
+            case "stop":
+
+                //Player stoppen
+                camera.stop();
+
+                //Countdown fuer Shutdown zuruecksetzen und starten, weil gerade nichts mehr passiert
+                countdownID = setInterval(countdown, 1000);
+
+                //Position zuruecksetzen
+                currentPosition = -1;
+
+                //Aktives Item zuruecksetzen
+                currentActiveItem = "";
+
+                //Files zuruecksetzen
+                currentFiles = [];
+
+                //Infos an Client schicken, damit Playlist dort zurueckgesetzt wird
+                messageObjArr.push(
+                    {
+                        type: "set-position",
+                        value: currentPosition
+                    },
+                    {
+                        type: "active-item",
+                        value: currentActiveItem
+                    },
+                    {
+                        type: "set-files",
+                        value: currentFiles
+                    });
+                break;
+
             //Innerhalb des Titels spulen
             case "seek":
 
