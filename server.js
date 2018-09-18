@@ -312,6 +312,9 @@ wss.on('connection', function connection(ws) {
             //Video stoppen
             case "stop":
 
+                //Nutzer hat das Video beendet
+                userTriggeredChange = true;
+
                 //Player stoppen
                 camera.stop();
 
