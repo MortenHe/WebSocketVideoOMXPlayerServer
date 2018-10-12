@@ -1,9 +1,5 @@
 //OMXPlayer + Wrapper anlegen
-var OmxManager = require('omx-manager');
-var manager = new OmxManager();
-
-//gerade laufendes Video
-var camera;
+var omxp = require('omxplayer-controll');
 
 //WebSocketServer anlegen und starten
 const WebSocket = require('ws');
@@ -42,6 +38,9 @@ userTriggeredChange = false;
 //Countdown fuer Shutdown starten, weil gerade nichts passiert
 var countdownID = setInterval(countdown, 1000);
 
+//Jede Sekunde, die aktuelle Position des Videos ermitteln
+setInterval(getPos, 1000);
+
 //Wenn sich ein WebSocket mit dem WebSocketServer verbindet
 wss.on('connection', function connection(ws) {
     console.log("new client connected");
@@ -68,7 +67,7 @@ wss.on('connection', function connection(ws) {
                 break;
 
             //neue Playlist laden (ueber Browser-Aufruf) oder per RFID-Karte
-            case "set-video-playlist": case "set-rfid-playlist":
+            case "add-to-video-playlist": case "set-rfid-playlist":
                 console.log(type + JSON.stringify(value));
 
                 //Countdown fuer Shutdown wieder stoppen, weil nun etwas passiert
@@ -78,50 +77,49 @@ wss.on('connection', function connection(ws) {
                 currentCountdownTime = countdownTime;
 
                 //Dateiliste (Anzeigenamen) zurecksetzen
-                currentFiles = [];
-
+                //currentFiles = [];
                 //Dateiliste (Dateinamen im Sytem) zuruecksetzen
-                symlinkFiles = [];
-
+                //symlinkFiles = [];
                 //Symlink-Dir leeren
-                fs.emptyDirSync(symlinkDir);
+                //fs.emptyDirSync(symlinkDir);
 
-                //Audio-Verzeichnis merken
-                value.forEach((file, index) => {
+                //Ermitteln an welcher Stelle / unter welchem Namen die neue Datei eingefuegt
+                let nextIndex = currentFiles.length;
 
-                    //Dateinamen sammeln ("Conni back Pizza")
-                    currentFiles.push(file.name);
+                //
+                value
 
-                    //nummerertien Symlink erstellen
-                    const srcpath = videoDir + "/" + file.mode + "/" + file.path;
-                    const dstpath = symlinkDir + "/" + index + "-" + file.name + ".mp4";
-                    fs.ensureSymlinkSync(srcpath, dstpath);
+                //Dateinamen sammeln ("Conni back Pizza")
+                currentFiles.push(value.name);
 
-                    //Symlink-Dateinamen merken
-                    symlinkFiles.push(dstpath);
-                });
+                //nummerertien Symlink erstellen
+                const srcpath = videoDir + "/" + value.mode + "/" + value.path;
+                const dstpath = symlinkDir + "/" + nextIndex + "-" + file.name + ".mp4";
+                fs.ensureSymlinkSync(srcpath, dstpath);
+
+                //Symlink-Dateinamen merken
+                symlinkFiles.push(dstpath);
 
                 //Playlist von vorne starten
-                currentPosition = 0;
+                //currentPosition = 0;
 
-                //aktives Item setzen, wenn es sich nur um ein einzelnes Video handelt
-                currentActiveItem = value.length === 1 ? value[0].path : "";
+                //aktives Item setzen, wenn es sich nur um ein einzelnes Video handelt (=1. Video)
+                currentActiveItem = value.length === 1 ? value.path : "";
 
                 //Nutzer hat vorheriges Video beendet durch Start der neuen Playlist
-                userTriggeredChange = true;
+                //userTriggeredChange = true;
 
-                //Video starten
-                startVideo();
+                //Video starten, wenn es das 1. in die Playlist eingefuegte Video ist
+                if (currentFiles.length === 1) {
+                    startVideo();
+                }
 
                 //Es ist nicht mehr pausiert
-                currentPaused = false;
+                //currentPaused = false;
+
 
                 //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist, welches das active-item, file-list und resetteten countdown
                 messageObjArr.push(
-                    {
-                        type: "toggle-paused",
-                        value: currentPaused
-                    },
                     {
                         type: "active-item",
                         value: currentActiveItem
@@ -129,10 +127,6 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-files",
                         value: currentFiles
-                    },
-                    {
-                        type: "set-position",
-                        value: currentPosition
                     },
                     {
                         type: "set-countdown-time",
@@ -166,7 +160,7 @@ wss.on('connection', function connection(ws) {
 
                         //Wenn Titel pausiert war, wieder unpausen
                         if (currentPaused) {
-                            camera.play();
+                            omxp.playPause();
                         }
                     }
                 }
@@ -192,11 +186,11 @@ wss.on('connection', function connection(ws) {
                         console.log("1. Titel von vorne");
 
                         //10 min zurueck springen
-                        camera.previousChapter();
+                        omxp.setPosition(0);
 
                         //Wenn Titel pausiert war, wieder unpausen
                         if (currentPaused) {
-                            camera.play();
+                            omxp.playPause();
                         }
                     }
                 }
@@ -239,7 +233,7 @@ wss.on('connection', function connection(ws) {
                 else {
 
                     //10 min zurueck springen
-                    camera.previousChapter();
+                    omxp.setPosition(0);
                 }
 
                 //Es ist nicht mehr pausiert
@@ -264,9 +258,6 @@ wss.on('connection', function connection(ws) {
 
                     //neue Lautstaerke merken (max. 100)
                     currentVolume = Math.min(100, currentVolume + 10);
-
-                    //OMXPlayer lauter machen
-                    camera.increaseVolume();
                 }
 
                 //es soll leiser werden
@@ -274,10 +265,10 @@ wss.on('connection', function connection(ws) {
 
                     //neue Lautstaerke merken (min. 0)
                     currentVolume = Math.max(0, currentVolume - 10);
-
-                    //OMXPlayer leiser machen
-                    camera.decreaseVolume();
                 }
+
+                //OMXPlayer lauter machen
+                omxp.setVolume(currentVolume / 100);
 
                 //Nachricht mit Volume an clients schicken 
                 messageObjArr.push({
@@ -290,14 +281,7 @@ wss.on('connection', function connection(ws) {
             case 'toggle-paused-restart':
 
                 //Wenn gerade pausiert, Video wieder abspielen
-                if (currentPaused) {
-                    camera.play();
-                }
-
-                //Video laueft gerade, also pausieren
-                else {
-                    camera.pause();
-                }
+                omxp.playPause();
 
                 //Pausenstatus toggeln
                 currentPaused = !currentPaused;
@@ -316,7 +300,7 @@ wss.on('connection', function connection(ws) {
                 userTriggeredChange = true;
 
                 //Player stoppen
-                camera.stop();
+                omxp.stop();
 
                 //Countdown fuer Shutdown zuruecksetzen und starten, weil gerade nichts mehr passiert
                 countdownID = setInterval(countdown, 1000);
@@ -349,15 +333,8 @@ wss.on('connection', function connection(ws) {
             //Innerhalb des Titels spulen
             case "seek":
 
-                //Vorwaertes spulen
-                if (value) {
-                    camera.seekForward();
-                }
-
-                //Rueckwarts spulen
-                else {
-                    camera.seekBackward();
-                }
+                //spulen
+                omxp.seek(value);
                 break;
         }
 
@@ -414,24 +391,25 @@ function startVideo() {
     let video = symlinkFiles[currentPosition];
     console.log("play video " + video);
 
-    //Wenn gerade ein Video laueft, dieses stoppen
-    if (camera) {
-        console.log("stop video");
-        camera.stop();
-    }
+    //TODO: Wenn gerade ein Video laueft, dieses stoppen
 
-    //aktuelles Start-Volumewert berechnen 0 -> -30.00 db, 100 -> 0.00 db)
-    let vol = (100 - currentVolume) * -0.3;
+    //OPtionen fuer neues Video
+    let opts = {
+        'audioOutput': 'hdmi',
+        'blackBackground': true,
+        'disableKeys': true,
+        'disableOnScreenDisplay': false,
+        'disableGhostbox': true,
+        'startAt': 0,
+        'startVolume': (currentVolume / 100) //0.0 ... 1.0 default: 1.0
+    };
 
-    //Video mit schwarzem Hintergrund und passender Lautstaerke erzeugen und starten
-    camera = manager.create(video, {
-        "-b": true,
-        "--vol": vol
-    });
-    camera.play();
+    //Video starten
+    omxp.open(video, opts);
 
     //Beim Ende eines Videos
-    camera.on('end', function () {
+    omxp.on('finish', function () {
+
         console.log("video ended");
         console.log("user trigger " + userTriggeredChange);
 
@@ -548,4 +526,34 @@ function shutdown() {
 
     //Pi herunterfahren
     execSync("shutdown -h now");
+}
+
+//Position in Video ermitteln
+function getPos() {
+
+    //Position anfordern
+    omxp.getPosition(function (err, totalSecondsFloat) {
+
+        //Float zu int: 13.4323 => 13
+        let totalSeconds = Math.trunc(totalSecondsFloat);
+        console.log('track progress is', totalSeconds);
+
+        //Umrechung der Sekunden in [h, m, s] fuer formattierte Darstellung
+        let hours = Math.floor(totalSeconds / 3600);
+        totalSeconds %= 3600;
+        let minutes = Math.floor(totalSeconds / 60);
+        let seconds = totalSeconds % 60;
+
+        //h, m, s-Werte in Array packen
+        let output = [hours, minutes, seconds];
+
+        //[2,44,1] => 02:44:01
+        let outputString = timelite.time.str(output);
+
+        //Clients ueber aktuelle Zeit informieren
+        sendClientInfo([{
+            type: "time",
+            value: outputString
+        }]);
+    });
 }
