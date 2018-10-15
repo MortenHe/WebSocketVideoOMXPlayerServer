@@ -30,9 +30,8 @@ const countdownTime = 180;
 currentVolume = 50;
 currentPosition = 0;
 currentFiles = [];
-currentPaused = false;
+currentPaused = true;
 currentRandom = false;
-currentActiveItem = "";
 currentCountdownTime = countdownTime;
 currentTime = 0;
 
@@ -84,9 +83,6 @@ omxp.on('finish', function () {
             //Position zuruecksetzen
             currentPosition = 0;
 
-            //Aktives Item zuruecksetzen
-            currentActiveItem = "";
-
             //Files zuruecksetzen
             currentFiles = [];
 
@@ -96,14 +92,10 @@ omxp.on('finish', function () {
             //Symlink Verzeichnis leeren
             fs.emptyDirSync(symlinkDir);
 
-            //Clients informieren, dass Playlist fertig ist (position 0, activeItem "")
+            //Clients informieren, dass Playlist fertig ist (position 0)
             let messageObjArr = [{
                 type: "set-position",
                 value: currentPosition
-            },
-            {
-                type: "active-item",
-                value: currentActiveItem
             },
             {
                 type: "set-files",
@@ -164,7 +156,7 @@ wss.on('connection', function connection(ws) {
 
                 //Dateiobjekt sammeln ("Conni back Pizza", "00:13:05", "kinder/conni/conni-backt-pizza.mp4")
                 currentFiles.push({
-                    "path": value.file,
+                    "file": value.file,
                     "name": value.name,
                     "length": value.length
                 });
@@ -179,20 +171,19 @@ wss.on('connection', function connection(ws) {
                 symlinkFiles.push(dstpath);
                 console.log("symlink files:\n" + symlinkFiles);
 
-                //aktives Item setzen, wenn es sich nur um ein einzelnes Video handelt (=1. Video)
-                currentActiveItem = value.length === 1 ? value.path : "";
-
                 //Video starten, wenn flag gesetzt ist
                 if (value.startPlayback) {
                     startVideo();
+
+                    //Es ist nicht mehr pausiert
+                    currentPaused = false;
                 }
 
                 //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist, welches das active-item, file-list und resetteten countdown
-                messageObjArr.push(
-                    {
-                        type: "active-item",
-                        value: currentActiveItem
-                    },
+                messageObjArr.push({
+                    type: "toggle-paused",
+                    value: currentPaused
+                },
                     {
                         type: "set-files",
                         value: currentFiles
@@ -377,9 +368,6 @@ wss.on('connection', function connection(ws) {
                 //Position zuruecksetzen
                 currentPosition = 0;
 
-                //Aktives Item zuruecksetzen
-                currentActiveItem = "";
-
                 //Files zuruecksetzen
                 currentFiles = [];
 
@@ -394,10 +382,6 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-position",
                         value: currentPosition
-                    },
-                    {
-                        type: "active-item",
-                        value: currentActiveItem
                     },
                     {
                         type: "set-files",
@@ -439,9 +423,6 @@ wss.on('connection', function connection(ws) {
     }, {
         type: "set-files",
         value: currentFiles
-    }, {
-        type: "active-item",
-        value: currentActiveItem
     }];
 
     //Ueber Objekte gehen, die an WS geschickt werden
