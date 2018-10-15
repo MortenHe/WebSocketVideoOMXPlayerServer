@@ -162,12 +162,16 @@ wss.on('connection', function connection(ws) {
                 //Ermitteln an welcher Stelle / unter welchem Namen die neue Datei eingefuegt
                 let nextIndex = currentFiles.length;
 
-                //Dateinamen sammeln ("Conni back Pizza")
-                currentFiles.push(value.name);
+                //Dateiobjekt sammeln ("Conni back Pizza", "00:13:05", "kinder/conni/conni-backt-pizza.mp4")
+                currentFiles.push({
+                    "path": value.file,
+                    "name": value.name,
+                    "length": value.length
+                });
                 console.log("current files:\n" + currentFiles);
 
                 //nummerertien Symlink erstellen
-                const srcpath = videoDir + "/" + value.mode + "/" + value.path;
+                const srcpath = videoDir + "/" + value.file;
                 const dstpath = symlinkDir + "/" + nextIndex + "-" + value.name + ".mp4";
                 fs.ensureSymlinkSync(srcpath, dstpath);
 
@@ -178,8 +182,8 @@ wss.on('connection', function connection(ws) {
                 //aktives Item setzen, wenn es sich nur um ein einzelnes Video handelt (=1. Video)
                 currentActiveItem = value.length === 1 ? value.path : "";
 
-                //Video starten, wenn es das 1. in die Playlist eingefuegte Video ist
-                if (currentFiles.length === 1) {
+                //Video starten, wenn flag gesetzt ist
+                if (value.startPlayback) {
                     startVideo();
                 }
 
