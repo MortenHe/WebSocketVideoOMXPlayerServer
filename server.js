@@ -31,10 +31,10 @@ currentVolume = 50;
 currentPosition = 0;
 currentFiles = [];
 currentFilesTotalTime = null;
-currentPaused = true;
-currentRandom = false;
+currentPaused = false;
 currentCountdownTime = countdownTime;
 currentTime = 0;
+currentPlaylistStarted = false;
 
 //Liste der konkreten Dateinamen (als symlinks)
 symlinkFiles = [];
@@ -93,6 +93,9 @@ omxp.on('finish', function () {
             //Symlink Verzeichnis leeren
             fs.emptyDirSync(symlinkDir);
 
+            //Es laueft gerade keine Playlist
+            currentPlaylistStarted = false;
+
             //Clients informieren, dass Playlist fertig ist (position 0)
             let messageObjArr = [{
                 type: "set-position",
@@ -101,6 +104,10 @@ omxp.on('finish', function () {
             {
                 type: "set-files",
                 value: currentFiles
+            },
+            {
+                type: "set-playlist-started",
+                value: currentPlaylistStarted
             }];
 
             //Infos an Clients schicken
@@ -164,10 +171,11 @@ wss.on('connection', function connection(ws) {
                 console.log("current files:\n" + currentFiles);
 
                 //Laengen-Merkmal aus Playlist-Array extrahieren und addieren
-                let playlist_length_array = add(this.currentFiles.map(item => item.length));
+                let playlist_length_array = timelite.time.add(currentFiles.map(item => item.length));
 
                 //Ergebnis als String: [0, 5, 12] -> "00:05:12" liefern
-                currentFilesTotalTime = str(playlist_length_array);
+                currentFilesTotalTime = timelite.time.str(playlist_length_array);
+                console.log(currentFilesTotalTime)
 
                 //nummerertien Symlink erstellen
                 const srcpath = videoDir + "/" + value.file;
@@ -184,13 +192,18 @@ wss.on('connection', function connection(ws) {
 
                     //Es ist nicht mehr pausiert
                     currentPaused = false;
+
+                    //Die Playlist wurde gestartet
+                    currentPlaylistStarted = true;
+
                 }
 
                 //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist, welches das active-item, file-list und resetteten countdown
-                messageObjArr.push({
-                    type: "toggle-paused",
-                    value: currentPaused
-                },
+                messageObjArr.push(
+                    {
+                        type: "toggle-paused",
+                        value: currentPaused
+                    },
                     {
                         type: "set-files",
                         value: currentFiles
@@ -202,6 +215,10 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-files-total-time",
                         value: currentFilesTotalTime
+                    },
+                    {
+                        type: "set-playlist-started",
+                        value: currentPlaylistStarted
                     }
                 );
                 break;
@@ -288,7 +305,7 @@ wss.on('connection', function connection(ws) {
                 let jumpTo = value - currentPosition;
                 console.log("jump-to " + jumpTo);
 
-                //wenn nicht auf den bereits laufenden geklickt wurde
+                //wenn nicht auf das bereits laufende Video geklickt wurde
                 if (jumpTo !== 0) {
 
                     //zu gewissem Titel springen
@@ -310,6 +327,19 @@ wss.on('connection', function connection(ws) {
 
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
+
+                //Wenn Playlist noch nicht lief
+                if (!currentPlaylistStarted) {
+
+                    //Sie als gestartet markieren
+                    currentPlaylistStarted = true;
+
+                    //Und dem Nutzer mitteilen
+                    messageObjArr.push({
+                        type: "set-playlist-started",
+                        value: currentPlaylistStarted
+                    });
+                }
 
                 //Nachricht an clients, dass nun nicht mehr pausiert ist und aktuelle Position in Playlist
                 messageObjArr.push(
@@ -389,6 +419,9 @@ wss.on('connection', function connection(ws) {
                 //Symlink Verzeichnis leeren
                 fs.emptyDirSync(symlinkDir);
 
+                //Playlist laueft nicht mehr
+                currentPlaylistStarted = false;
+
                 //Infos an Client schicken, damit Playlist dort zurueckgesetzt wird
                 messageObjArr.push(
                     {
@@ -398,6 +431,10 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-files",
                         value: currentFiles
+                    },
+                    {
+                        type: "set-playlist-started",
+                        value: currentPlaylistStarted
                     });
                 break;
 
@@ -438,6 +475,10 @@ wss.on('connection', function connection(ws) {
     }, {
         type: "set-files-total-time",
         value: currentFilesTotalTime
+    },
+    {
+        type: "set-playlist-started",
+        value: currentPlaylistStarted
     }];
 
     //Ueber Objekte gehen, die an WS geschickt werden
@@ -483,7 +524,7 @@ function startVideo() {
     };
 
     //Video starten
-    omxp.open(video, opts);
+    //omxp.open(video, opts);
 }
 
 //Bei Inaktivitaet Countdown runterzaehlen und Shutdown ausfuehren
