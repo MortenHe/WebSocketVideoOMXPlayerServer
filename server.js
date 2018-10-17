@@ -26,10 +26,11 @@ fs.emptyDirSync(symlinkDir);
 //Zeit wie lange bis Shutdown durchgefuhert wird bei Inaktivitaet
 const countdownTime = 180;
 
-//Aktuelle Infos zu Volume / Position in Song / Position innerhalb der Playlist / Playlist / PausedStatus / Random merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
+//Aktuelle Infos zu Volume, etc. merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentVolume = 50;
 currentPosition = 0;
 currentFiles = [];
+currentFilesTotalTime = null;
 currentPaused = true;
 currentRandom = false;
 currentCountdownTime = countdownTime;
@@ -162,6 +163,12 @@ wss.on('connection', function connection(ws) {
                 });
                 console.log("current files:\n" + currentFiles);
 
+                //Laengen-Merkmal aus Playlist-Array extrahieren und addieren
+                let playlist_length_array = add(this.currentFiles.map(item => item.length));
+
+                //Ergebnis als String: [0, 5, 12] -> "00:05:12" liefern
+                currentFilesTotalTime = str(playlist_length_array);
+
                 //nummerertien Symlink erstellen
                 const srcpath = videoDir + "/" + value.file;
                 const dstpath = symlinkDir + "/" + nextIndex + "-" + value.name + ".mp4";
@@ -191,7 +198,12 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-countdown-time",
                         value: currentCountdownTime
-                    });
+                    },
+                    {
+                        type: "set-files-total-time",
+                        value: currentFilesTotalTime
+                    }
+                );
                 break;
 
             //Video wurde vom Nutzer weitergeschaltet
@@ -423,6 +435,9 @@ wss.on('connection', function connection(ws) {
     }, {
         type: "set-files",
         value: currentFiles
+    }, {
+        type: "set-files-total-time",
+        value: currentFilesTotalTime
     }];
 
     //Ueber Objekte gehen, die an WS geschickt werden
