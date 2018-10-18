@@ -36,6 +36,12 @@ currentCountdownTime = countdownTime;
 currentTime = 0;
 currentPlaylistStarted = false;
 
+//Anzahl der Sekunden des aktuellen Tracks
+var trackTotalTime = 0;
+
+//Summe der h, m, s der Dateien, die Playlist nach aktueller Position kommen
+var followingTracksTimeArray = [0, 0, 0];
+
 //Liste der konkreten Dateinamen (als symlinks)
 symlinkFiles = [];
 
@@ -195,7 +201,6 @@ wss.on('connection', function connection(ws) {
 
                     //Die Playlist wurde gestartet
                     currentPlaylistStarted = true;
-
                 }
 
                 //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist, welches das active-item, file-list und resetteten countdown
@@ -236,6 +241,9 @@ wss.on('connection', function connection(ws) {
                         //zum naechsten Titel springen
                         currentPosition += 1;
 
+                        //Zeit anpassen, die die nachfolgenden Videos der Playlist haben und wie lange das aktuelle Video geht
+                        updatePlaylistTimes();
+
                         //User hat Ende des Videos getriggert => nicht automatisch einen Schritt weitergehen
                         userTriggeredChange = true;
 
@@ -262,6 +270,9 @@ wss.on('connection', function connection(ws) {
 
                         //zum vorherigen Titel springen
                         currentPosition -= 1;
+
+                        //Zeit anpassen, die die nachfolgenden Videos der Playlist haben und wie lange das aktuelle Video geht
+                        updatePlaylistTimes();
 
                         //User hat Ende des Videos getriggert => nicht automatisch einen Schritt weitergehen
                         userTriggeredChange = true;
@@ -310,6 +321,9 @@ wss.on('connection', function connection(ws) {
 
                     //zu gewissem Titel springen
                     currentPosition = value;
+
+                    //Zeit anpassen, die die nachfolgenden Videos der Playlist haben und wie lange das aktuelle Video geht
+                    updatePlaylistTimes();
 
                     //Nutzer hat Track ausgewaehlt
                     userTriggeredChange = true;
@@ -410,6 +424,9 @@ wss.on('connection', function connection(ws) {
                 //Position zuruecksetzen
                 currentPosition = 0;
 
+                //Zeit anpassen, die die nachfolgenden Videos der Playlist haben und wie lange das aktuelle Video geht
+                updatePlaylistTimes();
+
                 //Files zuruecksetzen
                 currentFiles = [];
 
@@ -475,8 +492,7 @@ wss.on('connection', function connection(ws) {
     }, {
         type: "set-files-total-time",
         value: currentFilesTotalTime
-    },
-    {
+    }, {
         type: "set-playlist-started",
         value: currentPlaylistStarted
     }];
@@ -572,29 +588,59 @@ function shutdown() {
 function getPos() {
 
     //Position anfordern
-    omxp.getPosition(function (err, totalSecondsFloat) {
+    omxp.getPosition(function (err, trackSecondsFloat) {
 
-        //Float zu int: 13.4323 => 13
-        let totalSeconds = Math.trunc(totalSecondsFloat / 100);
-        currentTime = totalSeconds;
+        //Umrechnung zu Sek: 1343 => 13 Sek
+        let trackSeconds = Math.trunc(trackSecondsFloat / 100);
+
+        //currentTime merken (fuer seek mit setPosition)
+        currentTime = trackSeconds;
         //console.log('track progress is', totalSeconds);
 
-        //Umrechung der Sekunden in [h, m, s] fuer formattierte Darstellung
-        let hours = Math.floor(totalSeconds / 3600);
-        totalSeconds %= 3600;
-        let minutes = Math.floor(totalSeconds / 60);
-        let seconds = totalSeconds % 60;
+        //Restzeit des aktuellen Tracks berechnen
+        let trackSecondsRemaining = trackTotalTime - trackSeconds;
 
-        //h, m, s-Werte in Array packen
-        let output = [hours, minutes, seconds];
+        //Timelite Array errechnen fuer verbleibende Sekunden des Tracks
+        let trackSecondsRemainingArray = generateTimeliteArray(trackSecondsRemaining);
 
-        //[2,44,1] => 02:44:01
-        let outputString = timelite.time.str(output);
+        //jetzt berechnen wie lange die gesamte Playlist noch laeuft: Restzeit des aktuellen Tracks + Summe der Gesamtlaenge der folgenden Tracks
+        currentFilesTotalTime = timelite.time.str(timelite.time.add([trackSecondsRemainingArray, followingTracksTimeArray]));
 
-        //Clients ueber aktuelle Zeit informieren
+        //Clients ueber aktuelle Zeiten informieren
         sendClientInfo([{
             type: "time",
-            value: outputString
+            value: timelite.time.str(trackSecondsRemainingArray)
+        },
+        {
+            type: "set-files-total-time",
+            value: currentFilesTotalTime
         }]);
     });
+}
+
+//Merken wie lange der aktuelle Track geht und ausrechnen wie lange die noch folgenden Tracks der Playlist dauern
+function updatePlaylistTimes() {
+
+    //Anzahl der Sekunden der aktuellen Datei berechnen und merken
+    let file = currentFiles[currentPosition]["length"];
+    trackTotalTime = parseInt(file.substring(0, 2)) * 3600 + parseInt(file.substring(3, 5)) * 60 + parseInt(file.substring(6, 8));
+
+    //Laenge der Files aufsummieren, die nach aktueller Position kommen
+    followingTracksTimeArray = timelite.time.add(
+        currentFiles
+            .filter((file, pos) => pos > currentPosition)
+            .map(file => file.length));
+}
+
+//Aus Sekundenzahl Timelite Array [h, m, s] bauen
+function generateTimeliteArray(secondsTotal) {
+
+    //Umrechung der Sekunden in [h, m, s] fuer formattierte Darstellung
+    let hours = Math.floor(secondsTotal / 3600);
+    secondsTotal %= 3600;
+    let minutes = Math.floor(secondsTotal / 60);
+    let seconds = secondsTotal % 60;
+
+    //h, m, s-Werte in Array packen
+    return [hours, minutes, seconds];
 }
