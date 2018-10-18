@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "description": "socket.io server",
   "dependencies": {
-    "fs-extra": "^6.0.0",
+    "fs-extra": "^7.0.0",
     "omxplayer-controll": "^0.1.9",
     "timelite": "0.0.11",
-    "ws": "^5.1.1"
+    "ws": "^6.1.0"
   }
 }
