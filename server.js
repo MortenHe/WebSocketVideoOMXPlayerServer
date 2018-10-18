@@ -40,7 +40,7 @@ currentPlaylistStarted = false;
 var trackTotalTime = 0;
 
 //Summe der h, m, s der Dateien, die Playlist nach aktueller Position kommen
-var followingTracksTimeArray = [0, 0, 0];
+var followingTracksTimeString = "00:00:00";
 
 //Liste der konkreten Dateinamen (als symlinks)
 symlinkFiles = [];
@@ -590,31 +590,40 @@ function getPos() {
     //Position anfordern
     omxp.getPosition(function (err, trackSecondsFloat) {
 
+        //if (trackSecondsFloat) {
+
+        trackSecondsFloat = 0;
+
         //Umrechnung zu Sek: 1343 => 13 Sek
         let trackSeconds = Math.trunc(trackSecondsFloat / 100);
 
         //currentTime merken (fuer seek mit setPosition)
         currentTime = trackSeconds;
-        //console.log('track progress is', totalSeconds);
+        console.log('track progress is', trackSeconds);
 
         //Restzeit des aktuellen Tracks berechnen
         let trackSecondsRemaining = trackTotalTime - trackSeconds;
+        console.log(trackSecondsRemaining);
 
-        //Timelite Array errechnen fuer verbleibende Sekunden des Tracks
-        let trackSecondsRemainingArray = generateTimeliteArray(trackSecondsRemaining);
+        //Timelite String errechnen fuer verbleibende Zeit des Tracks
+        let trackSecondsRemainingString = generateTimeliteStringFromSeconds(trackSecondsRemaining);
+        console.log(trackSecondsRemainingString)
+        console.log(followingTracksTimeString);
 
         //jetzt berechnen wie lange die gesamte Playlist noch laeuft: Restzeit des aktuellen Tracks + Summe der Gesamtlaenge der folgenden Tracks
-        currentFilesTotalTime = timelite.time.str(timelite.time.add([trackSecondsRemainingArray, followingTracksTimeArray]));
+        currentFilesTotalTime = timelite.time.str(timelite.time.add([trackSecondsRemainingString, followingTracksTimeString]));
+        console.log(currentFilesTotalTime);
 
         //Clients ueber aktuelle Zeiten informieren
         sendClientInfo([{
             type: "time",
-            value: timelite.time.str(trackSecondsRemainingArray)
+            value: generateTimeliteStringFromSeconds(trackSecondsRemainingString)
         },
         {
             type: "set-files-total-time",
             value: currentFilesTotalTime
         }]);
+        //}
     });
 }
 
@@ -626,14 +635,16 @@ function updatePlaylistTimes() {
     trackTotalTime = parseInt(file.substring(0, 2)) * 3600 + parseInt(file.substring(3, 5)) * 60 + parseInt(file.substring(6, 8));
 
     //Laenge der Files aufsummieren, die nach aktueller Position kommen
-    followingTracksTimeArray = timelite.time.add(
+    followingTracksTimeString = timelite.time.str(timelite.time.add(
         currentFiles
             .filter((file, pos) => pos > currentPosition)
-            .map(file => file.length));
+            .map(file => file["length"])));
+
+    console.log("new follow " + followingTracksTimeString);
 }
 
 //Aus Sekundenzahl Timelite Array [h, m, s] bauen
-function generateTimeliteArray(secondsTotal) {
+function generateTimeliteStringFromSeconds(secondsTotal) {
 
     //Umrechung der Sekunden in [h, m, s] fuer formattierte Darstellung
     let hours = Math.floor(secondsTotal / 3600);
@@ -642,5 +653,5 @@ function generateTimeliteArray(secondsTotal) {
     let seconds = secondsTotal % 60;
 
     //h, m, s-Werte in Array packen
-    return [hours, minutes, seconds];
+    return timelite.time.str([hours, minutes, seconds]);
 }
