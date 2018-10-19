@@ -28,13 +28,12 @@ const countdownTime = 180;
 
 //Aktuelle Infos zu Volume, etc. merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 currentVolume = 50;
-currentPosition = 0;
+currentPosition = -1;
 currentFiles = [];
 currentFilesTotalTime = null;
 currentPaused = false;
 currentCountdownTime = countdownTime;
 currentTime = 0;
-currentPlaylistStarted = false;
 
 //Anzahl der Sekunden des aktuellen Tracks
 var trackTotalTime = 0;
@@ -88,7 +87,7 @@ omxp.on('finish', function () {
             countdownID = setInterval(countdown, 1000);
 
             //Position zuruecksetzen
-            currentPosition = 0;
+            currentPosition = -1;
 
             //Files zuruecksetzen
             currentFiles = [];
@@ -99,9 +98,6 @@ omxp.on('finish', function () {
             //Symlink Verzeichnis leeren
             fs.emptyDirSync(symlinkDir);
 
-            //Es laueft gerade keine Playlist
-            currentPlaylistStarted = false;
-
             //Clients informieren, dass Playlist fertig ist (position 0)
             let messageObjArr = [{
                 type: "set-position",
@@ -110,10 +106,6 @@ omxp.on('finish', function () {
             {
                 type: "set-files",
                 value: currentFiles
-            },
-            {
-                type: "set-playlist-started",
-                value: currentPlaylistStarted
             }];
 
             //Infos an Clients schicken
@@ -165,6 +157,13 @@ wss.on('connection', function connection(ws) {
                 //Countdown-Zeit wieder zuruecksetzen
                 currentCountdownTime = countdownTime;
 
+                //Wenn Video gestartet werden soll
+                if (value.startPlayback) {
+
+                    //bisherige Playlist zuruecksetzen
+                    resetPlaylist();
+                }
+
                 //Ermitteln an welcher Stelle / unter welchem Namen die neue Datei eingefuegt
                 let nextIndex = currentFiles.length;
 
@@ -192,22 +191,31 @@ wss.on('connection', function connection(ws) {
                 symlinkFiles.push(dstpath);
                 console.log("symlink files:\n" + symlinkFiles);
 
-                //Video starten, wenn flag gesetzt ist
+                //wenn flag gesetzt ist
                 if (value.startPlayback) {
+
+                    //beim 1. Video beginnen
+                    currentPosition = 0;
+
+                    //Video starten
                     startVideo();
 
                     //Es ist nicht mehr pausiert
                     currentPaused = false;
-
-                    //Die Playlist wurde gestartet
-                    currentPlaylistStarted = true;
                 }
+
+                //Gesamtspielzeit der Playlist anpassen
+                updatePlaylistTimes();
 
                 //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist, welches das active-item, file-list und resetteten countdown
                 messageObjArr.push(
                     {
                         type: "toggle-paused",
                         value: currentPaused
+                    },
+                    {
+                        type: "set-position",
+                        value: currentPosition
                     },
                     {
                         type: "set-files",
@@ -220,10 +228,6 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-files-total-time",
                         value: currentFilesTotalTime
-                    },
-                    {
-                        type: "set-playlist-started",
-                        value: currentPlaylistStarted
                     }
                 );
                 break;
@@ -342,19 +346,6 @@ wss.on('connection', function connection(ws) {
                 //Es ist nicht mehr pausiert
                 currentPaused = false;
 
-                //Wenn Playlist noch nicht lief
-                if (!currentPlaylistStarted) {
-
-                    //Sie als gestartet markieren
-                    currentPlaylistStarted = true;
-
-                    //Und dem Nutzer mitteilen
-                    messageObjArr.push({
-                        type: "set-playlist-started",
-                        value: currentPlaylistStarted
-                    });
-                }
-
                 //Nachricht an clients, dass nun nicht mehr pausiert ist und aktuelle Position in Playlist
                 messageObjArr.push(
                     {
@@ -422,22 +413,13 @@ wss.on('connection', function connection(ws) {
                 countdownID = setInterval(countdown, 1000);
 
                 //Position zuruecksetzen
-                currentPosition = 0;
+                currentPosition = -1;
+
+                //Playlist zuruecksetzen
+                resetPlaylist();
 
                 //Zeit anpassen, die die nachfolgenden Videos der Playlist haben und wie lange das aktuelle Video geht
                 updatePlaylistTimes();
-
-                //Files zuruecksetzen
-                currentFiles = [];
-
-                //Symlink files zuruecksetzen
-                symlinkFiles = [];
-
-                //Symlink Verzeichnis leeren
-                fs.emptyDirSync(symlinkDir);
-
-                //Playlist laueft nicht mehr
-                currentPlaylistStarted = false;
 
                 //Infos an Client schicken, damit Playlist dort zurueckgesetzt wird
                 messageObjArr.push(
@@ -448,10 +430,6 @@ wss.on('connection', function connection(ws) {
                     {
                         type: "set-files",
                         value: currentFiles
-                    },
-                    {
-                        type: "set-playlist-started",
-                        value: currentPlaylistStarted
                     });
                 break;
 
@@ -492,9 +470,6 @@ wss.on('connection', function connection(ws) {
     }, {
         type: "set-files-total-time",
         value: currentFilesTotalTime
-    }, {
-        type: "set-playlist-started",
-        value: currentPlaylistStarted
     }];
 
     //Ueber Objekte gehen, die an WS geschickt werden
@@ -603,16 +578,16 @@ function getPos() {
 
         //Restzeit des aktuellen Tracks berechnen
         let trackSecondsRemaining = trackTotalTime - trackSeconds;
-        console.log(trackSecondsRemaining);
+        //console.log(trackSecondsRemaining);
 
         //Timelite String errechnen fuer verbleibende Zeit des Tracks
         let trackSecondsRemainingString = generateTimeliteStringFromSeconds(trackSecondsRemaining);
-        console.log(trackSecondsRemainingString)
-        console.log(followingTracksTimeString);
+        //console.log(trackSecondsRemainingString)
+        //console.log(followingTracksTimeString);
 
         //jetzt berechnen wie lange die gesamte Playlist noch laeuft: Restzeit des aktuellen Tracks + Summe der Gesamtlaenge der folgenden Tracks
         currentFilesTotalTime = timelite.time.str(timelite.time.add([trackSecondsRemainingString, followingTracksTimeString]));
-        console.log(currentFilesTotalTime);
+        //console.log(currentFilesTotalTime);
 
         //Clients ueber aktuelle Zeiten informieren
         sendClientInfo([{
@@ -630,17 +605,22 @@ function getPos() {
 //Merken wie lange der aktuelle Track geht und ausrechnen wie lange die noch folgenden Tracks der Playlist dauern
 function updatePlaylistTimes() {
 
-    //Anzahl der Sekunden der aktuellen Datei berechnen und merken
-    let file = currentFiles[currentPosition]["length"];
-    trackTotalTime = parseInt(file.substring(0, 2)) * 3600 + parseInt(file.substring(3, 5)) * 60 + parseInt(file.substring(6, 8));
+    //Zeit zuruecksetzen
+    trackTotalTime = 0;
+
+    //Sofern die Playlist laueft
+    if (currentPosition > -1) {
+
+        //die Anzahl der Sekunden der aktuellen Datei berechnen und merken
+        let file = currentFiles[currentPosition]["length"];
+        trackTotalTime = parseInt(file.substring(0, 2)) * 3600 + parseInt(file.substring(3, 5)) * 60 + parseInt(file.substring(6, 8));
+    }
 
     //Laenge der Files aufsummieren, die nach aktueller Position kommen
     followingTracksTimeString = timelite.time.str(timelite.time.add(
         currentFiles
             .filter((file, pos) => pos > currentPosition)
             .map(file => file["length"])));
-
-    console.log("new follow " + followingTracksTimeString);
 }
 
 //Aus Sekundenzahl Timelite Array [h, m, s] bauen
@@ -654,4 +634,17 @@ function generateTimeliteStringFromSeconds(secondsTotal) {
 
     //h, m, s-Werte in Array packen
     return timelite.time.str([hours, minutes, seconds]);
+}
+
+//Playlist zuruecksetzen (z.B. bei Stop oder wenn Playlist zu Ende gelaufen ist)
+function resetPlaylist() {
+
+    //Files zuruecksetzen
+    currentFiles = [];
+
+    //Symlink files zuruecksetzen
+    symlinkFiles = [];
+
+    //Symlink Verzeichnis leeren
+    fs.emptyDirSync(symlinkDir);
 }
