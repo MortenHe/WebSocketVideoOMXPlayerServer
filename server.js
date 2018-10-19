@@ -10,6 +10,7 @@ const timelite = require('timelite');
 
 //Filesystem und Path Abfragen fuer Playlist
 const fs = require('fs-extra');
+const path = require('path');
 
 //Befehle auf Kommandzeile ausfuehren
 const { execSync } = require('child_process');
@@ -184,7 +185,7 @@ wss.on('connection', function connection(ws) {
 
                 //nummerertien Symlink erstellen
                 const srcpath = videoDir + "/" + value.file;
-                const dstpath = symlinkDir + "/" + nextIndex + "-" + value.name + ".mp4";
+                const dstpath = symlinkDir + "/" + nextIndex + "-" + path.basename(value.file);
                 fs.ensureSymlinkSync(srcpath, dstpath);
 
                 //Symlink-Dateinamen merken
@@ -385,7 +386,7 @@ wss.on('connection', function connection(ws) {
                 break;
 
             //Pause-Status toggeln
-            case 'toggle-paused-restart':
+            case 'toggle-play-pause':
 
                 //Wenn gerade pausiert, Video wieder abspielen
                 omxp.playPause();
