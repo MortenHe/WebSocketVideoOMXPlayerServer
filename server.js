@@ -407,8 +407,9 @@ wss.on('connection', function connection(ws) {
                 //Nutzer hat das Video beendet
                 userTriggeredChange = true;
 
-                //Player stoppen
+                //Player pausieren und Video ausblenden
                 omxp.hideVideo();
+                omxp.playPause();
 
                 //Countdown fuer Shutdown zuruecksetzen und starten, weil gerade nichts mehr passiert
                 countdownID = setInterval(countdown, 1000);
@@ -516,7 +517,7 @@ function startVideo() {
     };
 
     //Video starten
-    //omxp.open(video, opts);
+    omxp.open(video, opts);
 }
 
 //Bei Inaktivitaet Countdown runterzaehlen und Shutdown ausfuehren
@@ -566,40 +567,38 @@ function getPos() {
     //Position anfordern
     omxp.getPosition(function (err, trackSecondsFloat) {
 
-        //if (trackSecondsFloat) {
+        if (trackSecondsFloat) {
 
-        trackSecondsFloat = 0;
+            //Umrechnung zu Sek: 1343 => 13 Sek
+            let trackSeconds = Math.trunc(trackSecondsFloat / 100);
 
-        //Umrechnung zu Sek: 1343 => 13 Sek
-        let trackSeconds = Math.trunc(trackSecondsFloat / 100);
+            //currentTime merken (fuer seek mit setPosition)
+            currentTime = trackSeconds;
+            console.log('track progress is', trackSeconds);
 
-        //currentTime merken (fuer seek mit setPosition)
-        currentTime = trackSeconds;
-        console.log('track progress is', trackSeconds);
+            //Restzeit des aktuellen Tracks berechnen
+            let trackSecondsRemaining = trackTotalTime - trackSeconds;
+            //console.log(trackSecondsRemaining);
 
-        //Restzeit des aktuellen Tracks berechnen
-        let trackSecondsRemaining = trackTotalTime - trackSeconds;
-        //console.log(trackSecondsRemaining);
+            //Timelite String errechnen fuer verbleibende Zeit des Tracks
+            let trackSecondsRemainingString = generateTimeliteStringFromSeconds(trackSecondsRemaining);
+            //console.log(trackSecondsRemainingString)
+            //console.log(followingTracksTimeString);
 
-        //Timelite String errechnen fuer verbleibende Zeit des Tracks
-        let trackSecondsRemainingString = generateTimeliteStringFromSeconds(trackSecondsRemaining);
-        //console.log(trackSecondsRemainingString)
-        //console.log(followingTracksTimeString);
+            //jetzt berechnen wie lange die gesamte Playlist noch laeuft: Restzeit des aktuellen Tracks + Summe der Gesamtlaenge der folgenden Tracks
+            currentFilesTotalTime = timelite.time.str(timelite.time.add([trackSecondsRemainingString, followingTracksTimeString]));
+            //console.log(currentFilesTotalTime);
 
-        //jetzt berechnen wie lange die gesamte Playlist noch laeuft: Restzeit des aktuellen Tracks + Summe der Gesamtlaenge der folgenden Tracks
-        currentFilesTotalTime = timelite.time.str(timelite.time.add([trackSecondsRemainingString, followingTracksTimeString]));
-        //console.log(currentFilesTotalTime);
-
-        //Clients ueber aktuelle Zeiten informieren
-        sendClientInfo([{
-            type: "time",
-            value: generateTimeliteStringFromSeconds(trackSecondsRemainingString)
-        },
-        {
-            type: "set-files-total-time",
-            value: currentFilesTotalTime
-        }]);
-        //}
+            //Clients ueber aktuelle Zeiten informieren
+            sendClientInfo([{
+                type: "time",
+                value: trackSecondsRemainingString
+            },
+            {
+                type: "set-files-total-time",
+                value: currentFilesTotalTime
+            }]);
+        }
     });
 }
 
