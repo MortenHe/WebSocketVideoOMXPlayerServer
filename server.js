@@ -45,83 +45,11 @@ var followingTracksTimeString = "00:00:00";
 //Liste der konkreten Dateinamen (als symlinks)
 symlinkFiles = [];
 
-//wurde umschalten (und damit Video End Callback) vom Nutzer getriggert
-userTriggeredChange = false;
-
 //Countdown fuer Shutdown starten, weil gerade nichts passiert
 var countdownID = setInterval(countdown, 1000);
 
-//Jede Sekunde, die aktuelle Position des Videos ermitteln
-setInterval(getPos, 1000);
-
-//Beim Ende eines Videos
-omxp.on('finish', function () {
-    console.log("video ended");
-    console.log("user trigger " + userTriggeredChange);
-
-    //Wenn das Ende nicht vom Nutzer getriggert wurde (durch prev / next click)
-    if (!userTriggeredChange) {
-        console.log("end after playback");
-
-        //Wenn wir noch nicht beim letzten Video waren
-        if (currentPosition < (symlinkFiles.length - 1)) {
-            console.log("play next video");
-
-            //zum naechsten Item in der Playlist gehen
-            currentPosition += 1;
-
-            //Video starten
-            startVideo();
-
-            //Position-Infos an Clients schicken
-            sendClientInfo([{
-                type: "set-position",
-                value: currentPosition
-            }]);
-        }
-
-        //wir waren beim letzten Video
-        else {
-            console.log("playlist over");
-
-            //Countdown fuer Shutdown zuruecksetzen und starten, weil gerade nichts mehr passiert
-            countdownID = setInterval(countdown, 1000);
-
-            //Position zuruecksetzen
-            currentPosition = -1;
-
-            //Files zuruecksetzen
-            currentFiles = [];
-
-            //Symlink files zuruecksetzen
-            symlinkFiles = [];
-
-            //Symlink Verzeichnis leeren
-            fs.emptyDirSync(symlinkDir);
-
-            //Clients informieren, dass Playlist fertig ist (position 0)
-            let messageObjArr = [{
-                type: "set-position",
-                value: currentPosition
-            },
-            {
-                type: "set-files",
-                value: currentFiles
-            }];
-
-            //Infos an Clients schicken
-            sendClientInfo(messageObjArr);
-        }
-    }
-
-    //Video beendet, weil Nutzer prev / next geklickt hat
-    else {
-        console.log("video ended: triggered by user");
-
-        //Flag zuruecksetzen
-        userTriggeredChange = false;
-    }
-});
+//Wenn ein Video laeuft, ermitteln wo wir gerade sind und ob Video noch laueft
+timeAndStatusIntervalID = null;
 
 //Wenn sich ein WebSocket mit dem WebSocketServer verbindet
 wss.on('connection', function connection(ws) {
@@ -246,12 +174,6 @@ wss.on('connection', function connection(ws) {
                         //zum naechsten Titel springen
                         currentPosition += 1;
 
-                        //Zeit anpassen, die die nachfolgenden Videos der Playlist haben und wie lange das aktuelle Video geht
-                        updatePlaylistTimes();
-
-                        //User hat Ende des Videos getriggert => nicht automatisch einen Schritt weitergehen
-                        userTriggeredChange = true;
-
                         //Video starten
                         startVideo();
                     }
@@ -275,12 +197,6 @@ wss.on('connection', function connection(ws) {
 
                         //zum vorherigen Titel springen
                         currentPosition -= 1;
-
-                        //Zeit anpassen, die die nachfolgenden Videos der Playlist haben und wie lange das aktuelle Video geht
-                        updatePlaylistTimes();
-
-                        //User hat Ende des Videos getriggert => nicht automatisch einen Schritt weitergehen
-                        userTriggeredChange = true;
 
                         //Video starten
                         startVideo();
@@ -329,9 +245,6 @@ wss.on('connection', function connection(ws) {
 
                     //Zeit anpassen, die die nachfolgenden Videos der Playlist haben und wie lange das aktuelle Video geht
                     updatePlaylistTimes();
-
-                    //Nutzer hat Track ausgewaehlt
-                    userTriggeredChange = true;
 
                     //Video starten
                     startVideo();
@@ -404,10 +317,7 @@ wss.on('connection', function connection(ws) {
             //Video stoppen
             case "stop":
 
-                //Nutzer hat das Video beendet
-                userTriggeredChange = true;
-
-                //Player pausieren und Video ausblenden
+                //Player pausieren und Video ausblenden (stop Funktion geht derzeit nicht)
                 omxp.hideVideo();
                 omxp.playPause();
 
@@ -501,23 +411,78 @@ function sendClientInfo(messageObjArr) {
 //Video starten
 function startVideo() {
 
-    //Symlink aus aktueller Position in Playlist ermitteln
-    let video = symlinkFiles[currentPosition];
-    console.log("play video " + video);
+    //Wenn wir noch nicht beim letzten Video vorbei sind
+    if (currentPosition < currentFiles.length) {
 
-    //OPtionen fuer neues Video
-    let opts = {
-        'audioOutput': 'hdmi',
-        'blackBackground': true,
-        'disableKeys': true,
-        'disableOnScreenDisplay': false,
-        'disableGhostbox': true,
-        'startAt': 0,
-        'startVolume': (currentVolume / 100) //0.0 ... 1.0 default: 1.0
-    };
+        //Zeit anpassen, die die nachfolgenden Videos der Playlist haben und wie lange das aktuelle Video geht
+        updatePlaylistTimes();
 
-    //Video starten
-    omxp.open(video, opts);
+        //Zeit und Status kurzzeitig nicht mehr pruefen, damit Video nicht mehrfach weitergeschaltet wird
+        clearInterval(timeAndStatusIntervalID);
+
+        //Position-Infos an Clients schicken
+        sendClientInfo([{
+            type: "set-position",
+            value: currentPosition
+        }]);
+
+        //Symlink aus aktueller Position in Playlist ermitteln
+        let video = symlinkFiles[currentPosition];
+        console.log("play video " + video);
+
+        //OPtionen fuer neues Video
+        let opts = {
+            'audioOutput': 'hdmi',
+            'blackBackground': true,
+            'disableKeys': true,
+            'disableOnScreenDisplay': false,
+            'disableGhostbox': true,
+            'startAt': 0,
+            'startVolume': (currentVolume / 100) //0.0 ... 1.0 default: 1.0
+        };
+
+        //Video starten
+        omxp.open(video, opts);
+
+        //Regelmaessig pruefen wo wir im Video sind und ob das Video noch laueft (=> automatisch weiter in der Playlist gehen, falls Video fertig)
+        timeAndStatusIntervalID = setInterval(getPos, 1000);
+    }
+
+    //Playlist ist vorbei
+    else {
+        console.log("playlist over");
+
+        //Zeit und Status nicht mehr pruefen, da die Playlist vorbei ist
+        clearInterval(timeAndStatusIntervalID);
+
+        //Countdown fuer Shutdown zuruecksetzen und starten, weil gerade nichts mehr passiert
+        countdownID = setInterval(countdown, 1000);
+
+        //Position zuruecksetzen
+        currentPosition = -1;
+
+        //Files zuruecksetzen
+        currentFiles = [];
+
+        //Symlink files zuruecksetzen
+        symlinkFiles = [];
+
+        //Symlink Verzeichnis leeren
+        fs.emptyDirSync(symlinkDir);
+
+        //Clients informieren, dass Playlist fertig ist (position 0)
+        let messageObjArr = [{
+            type: "set-position",
+            value: currentPosition
+        },
+        {
+            type: "set-files",
+            value: currentFiles
+        }];
+
+        //Infos an Clients schicken
+        sendClientInfo(messageObjArr);
+    }
 }
 
 //Bei Inaktivitaet Countdown runterzaehlen und Shutdown ausfuehren
@@ -564,6 +529,22 @@ function shutdown() {
 //Position in Video ermitteln
 function getPos() {
 
+    //Playing, Paused, undefined
+    omxp.getStatus(function (err, status) {
+        console.log(status)
+
+        //Wenn gerade kein Video laueft, ist das aktuelle Video fertig
+        if (status === undefined) {
+            console.log("video over, go to next video");
+
+            //zum naechsten Titel in der Playlist gehen
+            currentPosition += 1;
+
+            //Video starten
+            startVideo();
+        }
+    });
+
     //Position anfordern
     omxp.getPosition(function (err, trackSecondsFloat) {
 
@@ -578,16 +559,12 @@ function getPos() {
 
             //Restzeit des aktuellen Tracks berechnen
             let trackSecondsRemaining = trackTotalTime - trackSeconds;
-            //console.log(trackSecondsRemaining);
 
             //Timelite String errechnen fuer verbleibende Zeit des Tracks
             let trackSecondsRemainingString = generateTimeliteStringFromSeconds(trackSecondsRemaining);
-            //console.log(trackSecondsRemainingString)
-            //console.log(followingTracksTimeString);
 
             //jetzt berechnen wie lange die gesamte Playlist noch laeuft: Restzeit des aktuellen Tracks + Summe der Gesamtlaenge der folgenden Tracks
             currentFilesTotalTime = timelite.time.str(timelite.time.add([trackSecondsRemainingString, followingTracksTimeString]));
-            //console.log(currentFilesTotalTime);
 
             //Clients ueber aktuelle Zeiten informieren
             sendClientInfo([{
