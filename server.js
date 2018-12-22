@@ -444,6 +444,7 @@ function startVideo() {
         //Video starten
         omxp.open(video, opts);
 
+        //Aktion mit leichter Verzoegerung ausfuehren (damit Video von ggf. langsamen USB-Stick schnell genug gestartet werden kann)
         //Regelmaessig pruefen wo wir im Video sind und ob das Video noch laueft (=> automatisch weiter in der Playlist gehen, falls Video fertig)
         setTimeout(() => {
             timeAndStatusIntervalID = setInterval(getPos, 1000);
