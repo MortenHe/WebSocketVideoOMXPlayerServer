@@ -445,7 +445,9 @@ function startVideo() {
         omxp.open(video, opts);
 
         //Regelmaessig pruefen wo wir im Video sind und ob das Video noch laueft (=> automatisch weiter in der Playlist gehen, falls Video fertig)
-        timeAndStatusIntervalID = setInterval(getPos, 1000);
+        setTimeout(() => {
+            timeAndStatusIntervalID = setInterval(getPos, 1000);
+        }, 2000);
     }
 
     //Playlist ist vorbei
