@@ -30,6 +30,7 @@ fs.emptyDirSync(symlinkDir);
 const countdownTime = 180;
 
 //Aktuelle Infos zu Volume, etc. merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
+data = [];
 data["volume"] = 50;
 data["position"] = -1;
 data["files"] = [];
