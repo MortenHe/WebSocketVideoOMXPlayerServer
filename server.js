@@ -133,7 +133,7 @@ wss.on('connection', function connection(ws) {
                 updatePlaylistTimes();
 
                 //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist, welches das active-item, file-list und resetteten countdown
-                messageArr.push("paused", "position", "files", "coutdownTime", "filesTotalTime");
+                messageArr.push("paused", "position", "files", "countdownTime", "filesTotalTime");
                 break;
 
             //Video wurde vom Nutzer weitergeschaltet
@@ -503,11 +503,18 @@ function updatePlaylistTimes() {
 //Aus Sekundenzahl Timelite Array [h, m, s] bauen
 function generateTimeliteStringFromSeconds(secondsTotal) {
 
-    //Umrechung der Sekunden in [h, m, s] fuer formattierte Darstellung
-    let hours = Math.floor(secondsTotal / 3600);
-    secondsTotal %= 3600;
-    let minutes = Math.floor(secondsTotal / 60);
-    let seconds = secondsTotal % 60;
+    //Variablen setzen, falls noch kein sinnvoller Wert geliefert wird
+    let hours = 0;
+    let minutes = 0;
+    let seconds = 0;
+
+    //Wenn OMX sinnvolle Werte liefern, Umrechung der Sekunden in [h, m, s] fuer formattierte Darstellung
+    if (secondsTotal > 0) {
+        hours = Math.floor(secondsTotal / 3600);
+        secondsTotal %= 3600;
+        minutes = Math.floor(secondsTotal / 60);
+        seconds = secondsTotal % 60;
+    }
 
     //h, m, s-Werte in Array packen
     return timelite.time.str([hours, minutes, seconds]);
