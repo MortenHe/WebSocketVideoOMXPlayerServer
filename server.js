@@ -102,7 +102,7 @@ wss.on('connection', function connection(ws) {
                     "name": value.name,
                     "length": value.length
                 });
-                console.log("current files:\n" + data["files"]);
+                console.log("current files:\n" + JSON.stringify(data["files"]));
 
                 //Laengen-Merkmal aus Playlist-Array extrahieren und addieren
                 let playlist_length_array = timelite.time.add(data["files"].map(item => item.length));
@@ -457,8 +457,8 @@ function getPos() {
         //Wenn Video laeuft
         if (trackSecondsFloat) {
 
-            //Umrechnung zu Sek: 1343 => 13 Sek
-            let trackSeconds = Math.trunc(trackSecondsFloat / 100);
+            //Umrechnung zu Sek: 134368 => 13 Sek
+            let trackSeconds = Math.trunc(trackSecondsFloat / 1000000);
 
             //data["time"] merken (fuer seek mit setPosition)
             data["time"] = trackSeconds;
