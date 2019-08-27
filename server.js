@@ -1,5 +1,3 @@
-//clearInterval(timeAndStatusIntervalID); bei Stop?
-
 //OMXPlayer + Wrapper anlegen
 var omxp = require('omxplayer-controll');
 
@@ -141,6 +139,7 @@ wss.on('connection', function connection(ws) {
             case 'remove-from-playlist':
                 console.log("remove-item " + value);
                 data["files"].splice(value, 1);
+                symlinkFiles.splice(value, 1);
 
                 //Gesamtspielzeit der Playlist anpassen und Clients informieren
                 updatePlaylistTimes();
@@ -151,6 +150,10 @@ wss.on('connection', function connection(ws) {
             case 'sort-playlist':
                 console.log("move item " + value.from + " to " + value.to);
                 data["files"] = arrayMove(data["files"], value.from, value.to);
+                symlinkFiles = arrayMove(symlinkFiles, value.from, value.to);
+                console.log(data["files"]);
+                console.log(symlinkFiles);
+
                 messageArr.push("files");
                 break;
 
@@ -226,6 +229,9 @@ wss.on('connection', function connection(ws) {
                 //Position zuruecksetzen
                 data["position"] = -1;
 
+                //Zeit und Status nicht mehr pruefen, da die Playlist vorbei ist
+                clearInterval(timeAndStatusIntervalID)
+
                 //Playlist zuruecksetzen
                 resetPlaylist();
 
@@ -244,6 +250,8 @@ wss.on('connection', function connection(ws) {
 
                 //Neue Position berechnen und spulen
                 const newPosition = (data["time"] * 100) + offset;
+                console.log(data["time"])
+                console.log(newPosition)
                 omxp.setPosition(newPosition);
 
                 //Neu (errechnete) Zeit setzen, damit mehrmaliges Spulen funktioniert
