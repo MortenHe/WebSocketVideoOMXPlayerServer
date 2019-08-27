@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "description": "socket.io server",
   "dependencies": {
+    "array-move": "^2.1.0",
     "fs-extra": "^7.0.1",
     "omxplayer-controll": "^0.2.0",
     "timelite": "0.0.11",

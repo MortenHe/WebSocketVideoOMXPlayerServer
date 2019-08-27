@@ -1,3 +1,5 @@
+//clearInterval(timeAndStatusIntervalID); bei Stop?
+
 //OMXPlayer + Wrapper anlegen
 var omxp = require('omxplayer-controll');
 
@@ -11,12 +13,13 @@ const timelite = require('timelite');
 //Filesystem und Path Abfragen fuer Playlist
 const fs = require('fs-extra');
 const path = require('path');
+const arrayMove = require('array-move');
 
 //Befehle auf Kommandzeile ausfuehren
 const { execSync } = require('child_process');
 
 //Verzeichnis wo die Videos liegen
-//Aus Config auslesen wo die Audio-Dateien liegen
+//Aus Config auslesen wo die Video-Dateien liegen
 const configFile = fs.readJsonSync('config.json');
 const videoDir = configFile["videoDir"];
 
@@ -47,13 +50,13 @@ var trackTotalTime = 0;
 var followingTracksTimeString = "00:00:00";
 
 //Liste der konkreten Dateinamen (als symlinks)
-symlinkFiles = [];
+var symlinkFiles = [];
 
 //Countdown fuer Shutdown starten, weil gerade nichts passiert
 var countdownID = setInterval(countdown, 1000);
 
 //Wenn ein Video laeuft, ermitteln wo wir gerade sind und ob Video noch laueft
-timeAndStatusIntervalID = null;
+var timeAndStatusIntervalID = null;
 
 //Wenn sich ein WebSocket-Client mit dem WebSocketServer verbindet
 wss.on('connection', function connection(ws) {
@@ -63,12 +66,12 @@ wss.on('connection', function connection(ws) {
     ws.on('message', function incoming(message) {
 
         //Nachricht kommt als String -> in JSON Objekt konvertieren
-        var obj = JSON.parse(message);
-        let type = obj.type;
-        let value = obj.value;
+        const obj = JSON.parse(message);
+        const type = obj.type;
+        const value = obj.value;
 
         //Array von MessageObjekte erstellen, die an WS gesendet werden
-        let messageArr = [];
+        const messageArr = [];
 
         //Pro Typ gewisse Aktionen durchfuehren
         switch (type) {
@@ -82,10 +85,8 @@ wss.on('connection', function connection(ws) {
             case "add-to-video-playlist": case "set-rfid-playlist":
                 console.log(type + JSON.stringify(value));
 
-                //Countdown fuer Shutdown wieder stoppen, weil nun etwas passiert
+                //Countdown fuer Shutdown wieder stoppen, weil nun etwas passiert und Countdowntime zuruecksetzen
                 clearInterval(countdownID);
-
-                //Countdown-Zeit wieder zuruecksetzen
                 data["countdownTime"] = countdownTime;
 
                 //Wenn Video gestartet werden soll, bisherige Playlist zuruecksetzen
@@ -94,7 +95,7 @@ wss.on('connection', function connection(ws) {
                 }
 
                 //Ermitteln an welcher Stelle / unter welchem Namen die neue Datei eingefuegt wird
-                let nextIndex = data["files"].length;
+                const nextIndex = data["files"].length;
 
                 //Dateiobjekt sammeln ("Conni back Pizza", "00:13:05", "kinder/conni/conni-backt-pizza.mp4")
                 data["files"].push({
@@ -105,11 +106,11 @@ wss.on('connection', function connection(ws) {
                 console.log("current files:\n" + JSON.stringify(data["files"]));
 
                 //Laengen-Merkmal aus Playlist-Array extrahieren und addieren
-                let playlist_length_array = timelite.time.add(data["files"].map(item => item.length));
+                const playlist_length_array = timelite.time.add(data["files"].map(item => item.length));
 
                 //Ergebnis als String: [0, 5, 12] -> "00:05:12" liefern
                 data["filesTotalTime"] = timelite.time.str(playlist_length_array);
-                console.log(data["filesTotalTime"])
+                console.log("playlist total length: " + data["filesTotalTime"]);
 
                 //nummerierten Symlink erstellen
                 const srcpath = videoDir + "/" + value.file;
@@ -136,65 +137,28 @@ wss.on('connection', function connection(ws) {
                 messageArr.push("paused", "position", "files", "countdownTime", "filesTotalTime");
                 break;
 
-            //Video wurde vom Nutzer weitergeschaltet
-            case 'change-item':
-                console.log("change-item " + value);
+            //Titel aus Playlist entfernen
+            case 'remove-from-playlist':
+                console.log("remove-item " + value);
+                data["files"].splice(value, 1);
 
-                //wenn das naechste Video kommen soll
-                if (value) {
+                //Gesamtspielzeit der Playlist anpassen und Clients informieren
+                updatePlaylistTimes();
+                messageArr.push("files");
+                break;
 
-                    //Wenn wir noch nicht beim letzten Titel sind, zum naechsten Video springen und Video starten
-                    if (data["position"] < (data["files"].length - 1)) {
-                        data["position"] += 1;
-                        startVideo();
-                    }
-
-                    //wir sind beim letzten Titel
-                    else {
-                        console.log("kein next beim letzten Titel");
-
-                        //Wenn Titel pausiert war, wieder unpausen
-                        if (data["paused"]) {
-                            omxp.playPause();
-                        }
-                    }
-                }
-
-                //das vorherige Video soll kommen
-                else {
-
-                    //Wenn wir nicht beim 1. Titel sind, zum vorherigen Video springen und Video starten
-                    if (data["position"] > 0) {
-                        data["position"] -= 1;
-                        startVideo();
-                    }
-
-                    //wir sind beim 1. Titel
-                    else {
-                        console.log("1. Titel von vorne");
-
-                        //Titel von vorne starten
-                        omxp.setPosition(0);
-
-                        //Wenn Titel pausiert war, wieder unpausen
-                        if (data["paused"]) {
-                            omxp.playPause();
-                        }
-                    }
-                }
-
-                //Pausierung zuruecksetzen und Clients informieren
-                data["paused"] = false;
-
-                //Nachricht an clients, dass nun nicht mehr pausiert ist und neue Position
-                messageArr.push("paused", "position");
+            //Playlist umsortieren und Clients informieren
+            case 'sort-playlist':
+                console.log("move item " + value.from + " to " + value.to);
+                data["files"] = arrayMove(data["files"], value.from, value.to);
+                messageArr.push("files");
                 break;
 
             //Sprung zu einem bestimmten Video in Playlist
             case "jump-to":
 
                 //Wie viele Schritte in welche Richtung springen?
-                let jumpTo = value - data["position"];
+                const jumpTo = value - data["position"];
                 console.log("jump-to " + jumpTo);
 
                 //wenn nicht auf das bereits laufende Video geklickt wurde
@@ -276,12 +240,10 @@ wss.on('connection', function connection(ws) {
             case "seek":
 
                 //in welche Richtung wird gespielt
-                let offset = value ? 1000 : -1000
+                const offset = value ? 1000 : -1000
 
-                //Neue Position berechnen
-                let newPosition = (data["time"] * 100) + offset;
-
-                //spulen
+                //Neue Position berechnen und spulen
+                const newPosition = (data["time"] * 100) + offset;
                 omxp.setPosition(newPosition);
 
                 //Neu (errechnete) Zeit setzen, damit mehrmaliges Spulen funktioniert
@@ -294,13 +256,13 @@ wss.on('connection', function connection(ws) {
     });
 
     //WS einmalig bei der Verbindung ueber div. Wert informieren
-    let WSConnectMessageArr = ["volume", "position", "paused", "files", "filesTotalTime"];
+    const WSConnectMessageArr = ["volume", "position", "paused", "files", "filesTotalTime"];
 
     //Ueber Messages gehen, die an Clients geschickt werden
     WSConnectMessageArr.forEach(message => {
 
         //Message-Object erzeugen und an Client schicken
-        let messageObj = {
+        const messageObj = {
             "type": message,
             "value": data[message]
         };
@@ -315,7 +277,7 @@ function sendClientInfo(messageArr) {
     messageArr.forEach(message => {
 
         //Message-Object erzeugen
-        let messageObj = {
+        const messageObj = {
             "type": message,
             "value": data[message]
         };
@@ -346,11 +308,11 @@ function startVideo() {
         sendClientInfo(["position"]);
 
         //Symlink aus aktueller Position in Playlist ermitteln
-        let video = symlinkFiles[data["position"]];
+        const video = symlinkFiles[data["position"]];
         console.log("play video " + video);
 
-        //Optionen fuer neues Video
-        let opts = {
+        //Optionen fuer neues Video setzen und Video starten
+        const opts = {
             'audioOutput': 'hdmi',
             'blackBackground': true,
             'disableKeys': true,
@@ -359,8 +321,6 @@ function startVideo() {
             'startAt': 0,
             'startVolume': (data["volume"] / 100) //0.0 ... 1.0 default: 1.0
         };
-
-        //Video starten
         omxp.open(video, opts);
 
         //Aktion mit leichter Verzoegerung ausfuehren (damit Video von ggf. langsamen USB-Stick schnell genug gestartet werden kann)
@@ -383,17 +343,11 @@ function startVideo() {
         //Position zuruecksetzen
         data["position"] = -1;
 
-        //Files zuruecksetzen
-        data["files"] = [];
-
-        //Symlink files zuruecksetzen
-        symlinkFiles = [];
-
-        //Symlink Verzeichnis leeren
-        fs.emptyDirSync(symlinkDir);
+        //Playlist zuruecksetzen
+        resetPlaylist();
 
         //Clients informieren, dass Playlist fertig ist (position 0)
-        sendClientInfo(["position, files"]);
+        sendClientInfo(["position", "files"]);
     }
 }
 
@@ -437,16 +391,12 @@ function getPos() {
 
     //Playing, Paused, undefined
     omxp.getStatus(function (err, status) {
-        console.log(status)
+        //console.log(status);
 
-        //Wenn gerade kein Video laueft, ist das aktuelle Video fertig
+        //Wenn gerade kein Video laueft, ist das aktuelle Video fertig. Zum naechsten Titel gehen und Video starten
         if (status === undefined) {
             console.log("video over, go to next video");
-
-            //zum naechsten Titel in der Playlist gehen
             data["position"] += 1;
-
-            //Video starten
             startVideo();
         }
     });
@@ -458,14 +408,14 @@ function getPos() {
         if (trackSecondsFloat) {
 
             //Umrechnung zu Sek: 134368 => 13 Sek
-            let trackSeconds = Math.trunc(trackSecondsFloat / 1000000);
+            const trackSeconds = Math.trunc(trackSecondsFloat / 1000000);
 
             //data["time"] merken (fuer seek mit setPosition)
             data["time"] = trackSeconds;
             console.log('track progress is', trackSeconds);
 
             //Restzeit des aktuellen Tracks berechnen
-            let trackSecondsRemaining = trackTotalTime - trackSeconds;
+            const trackSecondsRemaining = trackTotalTime - trackSeconds;
 
             //Timelite String errechnen fuer verbleibende Zeit des Tracks
             data["fileTime"] = generateTimeliteStringFromSeconds(trackSecondsRemaining);
@@ -489,7 +439,7 @@ function updatePlaylistTimes() {
     if (data["position"] > -1) {
 
         //die Anzahl der Sekunden der aktuellen Datei berechnen und merken
-        let file = data["files"][data["position"]]["length"];
+        const file = data["files"][data["position"]]["length"];
         trackTotalTime = parseInt(file.substring(0, 2)) * 3600 + parseInt(file.substring(3, 5)) * 60 + parseInt(file.substring(6, 8));
     }
 
