@@ -23,8 +23,8 @@ data["countdownTime"] = countdownTime;
 data["time"] = 0;
 
 //Mock Sekunden werden hochgezaehlt um Videowiedergabe zu emulieren
-const mockTrackLength = 10;
-const mockTrackLengthString = "00:00:10";
+const mockTrackLength = 50;
+const mockTrackLengthString = "00:10:50";
 var mockSeconds = 0;
 
 //Anzahl der Sekunden des aktuellen Tracks
@@ -106,9 +106,14 @@ wss.on('connection', function connection(ws) {
                 console.log("remove-item " + value);
                 data["files"].splice(value, 1);
 
+                //Wenn keine Titel mehr in Playlist sind, Countdown starten
+                if (data["files"].length === 0) {
+                    countdownID = setInterval(countdown, 1000);
+                }
+
                 //Gesamtspielzeit der Playlist anpassen und Clients informieren
                 updatePlaylistTimes();
-                messageArr.push("files");
+                messageArr.push("files", "filesTotalTime");
                 break;
 
             //Playlist umsortieren und Clients informieren
@@ -362,6 +367,9 @@ function updatePlaylistTimes() {
         data["files"]
             .filter((file, pos) => pos > data["position"])
             .map(file => file["length"])));
+
+    //Neue Gesamtlauftzeit der Playlist setzen
+    data["filesTotalTime"] = followingTracksTimeString;
 }
 
 //Aus Sekundenzahl Timelite Array [h, m, s] bauen
