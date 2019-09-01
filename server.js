@@ -251,16 +251,15 @@ wss.on('connection', function connection(ws) {
             case "seek":
 
                 //in welche Richtung wird gespielt
-                const offset = value ? 1000 : -1000
+                const offset = value ? 10000000 : -10000000
 
                 //Neue Position berechnen und spulen
-                const newPosition = (data["time"] * 100) + offset;
-                console.log(data["time"])
-                console.log(newPosition)
+                const newPosition = (data["time"] * 1000000) + offset;
+                console.log("seek to new position " + newPosition / 1000000);
                 omxp.setPosition(newPosition);
-
+                
                 //Neu (errechnete) Zeit setzen, damit mehrmaliges Spulen funktioniert
-                data["time"] = newPosition / 100;
+                data["time"] = newPosition / 1000000;
                 break;
         }
 
