@@ -6,7 +6,7 @@ const wss = new WebSocket.Server({ port: 8080, clientTracking: true });
 const timelite = require('timelite');
 
 //Zeit wie lange bis Shutdown durchgefuhert wird bei Inaktivitaet
-const countdownTime = 180;
+const countdownTime = 600;
 
 //Elemente in Playlist verschieben
 const arrayMove = require('array-move');
