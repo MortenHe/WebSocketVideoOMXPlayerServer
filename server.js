@@ -156,9 +156,6 @@ wss.on('connection', function connection(ws) {
                 console.log("move item " + value.from + " to " + value.to);
                 data["files"] = arrayMove(data["files"], value.from, value.to);
                 symlinkFiles = arrayMove(symlinkFiles, value.from, value.to);
-                console.log(data["files"]);
-                console.log(symlinkFiles);
-
                 messageArr.push("files");
                 break;
 
@@ -257,7 +254,7 @@ wss.on('connection', function connection(ws) {
                 const newPosition = (data["time"] * 1000000) + offset;
                 console.log("seek to new position " + newPosition / 1000000);
                 omxp.setPosition(newPosition);
-                
+
                 //Neu (errechnete) Zeit setzen, damit mehrmaliges Spulen funktioniert
                 data["time"] = newPosition / 1000000;
                 break;
