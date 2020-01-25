@@ -1,3 +1,2 @@
 #!/bin/bash
-cd /home/pi/mh_prog/VideoServer
-/usr/bin/sudo /usr/bin/node ./server.js > /home/pi/mh_prog/output-server.txt &
+/usr/bin/sudo /usr/bin/node /home/pi/mh_prog/VideoServer/server.js > /home/pi/mh_prog/output-server.txt &
