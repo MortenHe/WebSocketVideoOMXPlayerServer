@@ -16,9 +16,8 @@ const arrayMove = require('array-move');
 //Befehle auf Kommandzeile ausfuehren
 const { execSync } = require('child_process');
 
-//Verzeichnis wo die Videos liegen
 //Aus Config auslesen wo die Video-Dateien liegen
-const configFile = fs.readJsonSync('config.json');
+const configFile = fs.readJsonSync(__dirname + '/config.json');
 const videoDir = configFile["videoDir"];
 
 //Wo liegen die Symlinks auf die Videos
