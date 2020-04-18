@@ -332,7 +332,7 @@ function getMainJSON() {
                 delete jsonObj[mode]["filter"]["filters"][index]["active"];
 
                 //JSON dieses Filters holen (z.B. bibi-tina.json)
-                const jsonLink = configFile["jsonDir"] + mode + "/" + filterID + ".json";
+                const jsonLink = configFile["jsonDir"] + "/" + mode + "/" + filterID + ".json";
                 modeData = {
                     data: fs.readJSONSync(jsonLink),
                     filterID: filterID,
