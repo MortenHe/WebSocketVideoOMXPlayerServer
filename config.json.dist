@@ -1,3 +1,4 @@
 {
-    "videoDir": "/media/pi/usb_red/video"
+    "videoDir": "/media/pi/usb_red/Nextcloud/Raspi/files/wvp/videos",
+    "jsonDir": /media/pi/usb_red/Nextcloud/Raspi/files/wvp/json"
 }

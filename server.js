@@ -302,8 +302,7 @@ function sendClientInfo(messageArr) {
 function getMainJSON() {
 
     //In Videolist sind Infos ueber Modes und Filter
-    const jsonFilePath = glob.sync("/var/www/html/wvp/assets/json/*/videolist.json")[0];
-    const jsonObj = fs.readJSONSync(jsonFilePath);
+    const jsonObj = fs.readJSONSync(configFile["jsonDir"] + "/videolist.json");
 
     //Array, damit auslesen der einzelnen Unter-JSONs (bibi-tina.json, bobo.json) parallel erfolgen kann
     let modeDataFileArr = [];
@@ -333,7 +332,7 @@ function getMainJSON() {
                 delete jsonObj[mode]["filter"]["filters"][index]["active"];
 
                 //JSON dieses Filters holen (z.B. bibi-tina.json)
-                const jsonLink = glob.sync("/var/www/html/wvp/assets/json/*/" + mode + "/" + filterID + ".json")[0];
+                const jsonLink = configFile["jsonDir"] + mode + "/" + filterID + ".json";
                 modeData = {
                     data: fs.readJSONSync(jsonLink),
                     filterID: filterID,
