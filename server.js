@@ -28,7 +28,8 @@ const symlinkDir = "/home/pi/mh_prog/symlinkDir";
 fs.emptyDirSync(symlinkDir);
 
 //Zeit wie lange bis Shutdown durchgefuhert wird bei Inaktivitaet
-const countdownTime = 180;
+const countdownTime = configFile["countdownTime"];
+var countdownID = null;
 
 //Aktuelle Infos zu Volume, etc. merken, damit Clients, die sich spaeter anmelden, diese Info bekommen
 data = [];
@@ -38,12 +39,15 @@ data["files"] = [];
 data["fileTime"] = 0;
 data["filesTotalTime"] = null;
 data["paused"] = false;
-data["countdownTime"] = countdownTime;
+data["countdownTime"] = -1;
 data["time"] = 0;
 data["mainJSON"] = {};
 
 //JSON fuer Oberflaeche erstellen mit Infos zu aktiven Foldern, Filtern, etc.
 getMainJSON();
+
+//Countdown starten
+startCountdown();
 
 //Anzahl der Sekunden des aktuellen Tracks
 var trackTotalTime = 0;
@@ -53,9 +57,6 @@ var followingTracksTimeString = "00:00:00";
 
 //Liste der konkreten Dateinamen (als symlinks)
 var symlinkFiles = [];
-
-//Countdown fuer Shutdown starten, weil gerade nichts passiert
-var countdownID = setInterval(countdown, 1000);
 
 //Wenn ein Video laeuft, ermitteln wo wir gerade sind und ob Video noch laueft
 var timeAndStatusIntervalID = null;
@@ -87,9 +88,8 @@ wss.on('connection', function connection(ws) {
             case "add-to-video-playlist": case "set-rfid-playlist":
                 console.log(type + JSON.stringify(value));
 
-                //Countdown fuer Shutdown wieder stoppen, weil nun etwas passiert und Countdowntime zuruecksetzen
-                clearInterval(countdownID);
-                data["countdownTime"] = countdownTime;
+                //Countdown wieder stoppen
+                resetCountdown();
 
                 //Wenn Video gestartet werden soll, bisherige Playlist zuruecksetzen
                 if (value.startPlayback) {
@@ -136,7 +136,7 @@ wss.on('connection', function connection(ws) {
                 updatePlaylistTimes();
 
                 //Zusaetzliche Nachricht an clients, dass nun nicht mehr pausiert ist, welches das active-item, file-list und resetteten countdown
-                messageArr.push("paused", "position", "files", "countdownTime", "filesTotalTime");
+                messageArr.push("paused", "position", "files", "filesTotalTime");
                 break;
 
             //Titel aus Playlist entfernen
@@ -147,7 +147,7 @@ wss.on('connection', function connection(ws) {
 
                 //Wenn keine Dateien mehr in Playlist sind, Countdown starten
                 if (data["files"].length === 0) {
-                    countdownID = setInterval(countdown, 1000);
+                    startCountdown();
                 }
 
                 //Gesamtspielzeit der Playlist anpassen und Clients informieren
@@ -230,7 +230,7 @@ wss.on('connection', function connection(ws) {
                 omxp.playPause();
 
                 //Countdown fuer Shutdown zuruecksetzen und starten, weil gerade nichts mehr passiert
-                countdownID = setInterval(countdown, 1000);
+                startCountdown();
 
                 //Position zuruecksetzen
                 data["position"] = -1;
@@ -427,7 +427,7 @@ function startVideo() {
         clearInterval(timeAndStatusIntervalID);
 
         //Countdown fuer Shutdown zuruecksetzen und starten, weil gerade nichts mehr passiert
-        countdownID = setInterval(countdown, 1000);
+        startCountdown();
 
         //Position zuruecksetzen
         data["position"] = -1;
@@ -440,13 +440,28 @@ function startVideo() {
     }
 }
 
+//Countdown fuer Shutdown zuruecksetzen und starten, weil gerade nichts mehr passiert
+function startCountdown() {
+    console.log("start countdown")
+    data["countdownTime"] = countdownTime;
+    countdownID = setInterval(countdown, 1000);
+}
+
+//Countdown wieder stoppen (z.B. weil Titel in Playlist eingefuegt wurde)
+function resetCountdown() {
+    console.log("reset countdown");
+    clearInterval(countdownID);
+    countdownID = null;
+    data["countdownTime"] = -1;
+    sendClientInfo(["countdownTime"]);
+}
+
 //Bei Inaktivitaet Countdown runterzaehlen und Shutdown ausfuehren
 function countdown() {
-    //console.log("inactive");
 
     //Wenn der Countdown noch nicht abgelaufen ist
     if (data["countdownTime"] >= 0) {
-        //console.log("shutdown in " + data["countdownTime"] + " seconds");
+        console.log("shutdown in " + data["countdownTime"] + " seconds");
 
         //Anzahl der Sekunden bis Countdown an Clients schicken
         sendClientInfo(["countdownTime"]);
