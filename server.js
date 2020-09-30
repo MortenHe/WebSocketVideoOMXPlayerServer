@@ -160,7 +160,26 @@ wss.on('connection', function connection(ws) {
                 console.log("move item " + value.from + " to " + value.to);
                 data["files"] = arrayMove(data["files"], value.from, value.to);
                 symlinkFiles = arrayMove(symlinkFiles, value.from, value.to);
-                messageArr.push("files");
+
+                //Wenn gerade Video laeuft, ggf. aktiven Index anpassen
+                if (data["position"] > -1) {
+
+                    //Wenn aktives Video verschoben wurde -> aktiver Index = Zielposition
+                    if (value.from === data["position"]) {
+                        data["position"] = value.to;
+                    }
+
+                    //Wenn Titel vor aktivem Video auf die Position des aktiven Videos oder dahinter geschoben wurde -> aktiven Video rueckt eins nach oben
+                    else if (value.from < data["position"] && value.to >= data["position"]) {
+                        data["position"] -= 1;
+                    }
+
+                    //Wenn Titel hinter aktivem Video auf die Position des aktiven Videos oder davor geschoben wurde -> aktiven Video rueckt eins nach unten
+                    else if (value.from > data["position"] && value.to <= data["position"]) {
+                        data["position"] += 1;
+                    }
+                }
+                messageArr.push("files", "position");
                 break;
 
             //Sprung zu einem bestimmten Video in Playlist
