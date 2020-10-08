@@ -46,6 +46,13 @@ data["mainJSON"] = {};
 //JSON fuer Oberflaeche erstellen mit Infos zu aktiven Foldern, Filtern, etc.
 getMainJSON();
 
+//JSON nach x Sekunden nochmal laden, damit Aenderungen von Nextcloud Sync sichtbar werden (neue Playlists)
+setTimeout(() => {
+    console.log("reload main json");
+    getMainJSON();
+    sendClientInfo(["mainJSON"]);
+}, 40000);
+
 //Countdown starten
 startCountdown();
 
